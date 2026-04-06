@@ -150,21 +150,25 @@ export default function PatientDetailPage() {
 
   const handleAddApt = async (e: React.FormEvent) => {
     e.preventDefault();
-    const startDt = `${aptForm.date}T${aptForm.start_time}:00`;
+    const centerId = aptForm.center_id || patient.center_id;
+    if (!centerId) { toast.error("Selecciona un centro"); return; }
+    if (!aptForm.date || !aptForm.start_time) { toast.error("Selecciona fecha y hora"); return; }
+    const startDt = new Date(`${aptForm.date}T${aptForm.start_time}:00`).toISOString();
     const endDt = new Date(new Date(startDt).getTime() + parseInt(aptForm.duration) * 60000).toISOString();
     try {
       await createApt.mutateAsync({
         patient_id: patient.id,
         service_id: aptForm.service_id || null,
         professional_id: aptForm.professional_id || null,
-        center_id: aptForm.center_id || patient.center_id!,
+        center_id: centerId,
         start_time: startDt,
         end_time: endDt,
         notes: aptForm.notes || null,
       });
-      toast.success("Cita creada");
+      toast.success("Cita creada correctamente");
       setAptOpen(false);
-    } catch (err: any) { toast.error(err.message); }
+      setAptForm({ service_id: "", professional_id: "", center_id: "", date: format(new Date(), "yyyy-MM-dd"), start_time: "", duration: "30", notes: "" });
+    } catch (err: any) { toast.error(err.message || "Error al crear la cita"); }
   };
 
   return (
