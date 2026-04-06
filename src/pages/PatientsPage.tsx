@@ -14,7 +14,7 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
-import { Plus, Search, Eye, MoreHorizontal, Loader2 } from "lucide-react";
+import { Plus, Search, Eye, MoreHorizontal, Loader2, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { usePatients, useCreatePatient } from "@/hooks/usePatients";
 import { useCenters } from "@/hooks/useCenters";
