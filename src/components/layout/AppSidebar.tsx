@@ -14,9 +14,11 @@ import {
   Brain,
   Settings,
   ChevronDown,
+  LogOut,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 import {
   Sidebar,
   SidebarContent,
@@ -58,15 +60,7 @@ const managementNav = [
   { title: "Configuración", url: "/configuracion", icon: Settings },
 ];
 
-function NavGroup({
-  label,
-  items,
-  defaultOpen = true,
-}: {
-  label: string;
-  items: typeof mainNav;
-  defaultOpen?: boolean;
-}) {
+function NavGroup({ label, items, defaultOpen = true }: { label: string; items: typeof mainNav; defaultOpen?: boolean }) {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const location = useLocation();
@@ -77,9 +71,7 @@ function NavGroup({
         <CollapsibleTrigger asChild>
           <SidebarGroupLabel className="cursor-pointer text-sidebar-muted uppercase text-[10px] tracking-widest font-semibold flex items-center justify-between hover:text-sidebar-foreground transition-colors">
             {!collapsed && label}
-            {!collapsed && (
-              <ChevronDown className="h-3 w-3 transition-transform group-data-[state=open]/collapsible:rotate-180" />
-            )}
+            {!collapsed && <ChevronDown className="h-3 w-3 transition-transform group-data-[state=open]/collapsible:rotate-180" />}
           </SidebarGroupLabel>
         </CollapsibleTrigger>
         <CollapsibleContent>
@@ -87,17 +79,8 @@ function NavGroup({
             <SidebarMenu>
               {items.map((item) => (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={location.pathname === item.url}
-                    tooltip={item.title}
-                  >
-                    <NavLink
-                      to={item.url}
-                      end={item.url === "/"}
-                      className="text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-accent/60"
-                      activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                    >
+                  <SidebarMenuButton asChild isActive={location.pathname === item.url} tooltip={item.title}>
+                    <NavLink to={item.url} end={item.url === "/"} className="text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-accent/60" activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-medium">
                       <item.icon className="h-4 w-4" />
                       {!collapsed && <span>{item.title}</span>}
                     </NavLink>
@@ -115,6 +98,13 @@ function NavGroup({
 export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
+  const { profile, roles, signOut } = useAuth();
+
+  const initials = profile
+    ? `${profile.first_name?.[0] || ""}${profile.last_name?.[0] || ""}`.toUpperCase()
+    : "??";
+  const displayName = profile ? `${profile.first_name} ${profile.last_name}`.trim() : "Usuario";
+  const displayRole = roles.length > 0 ? roles[0].charAt(0).toUpperCase() + roles[0].slice(1) : "Sin rol";
 
   return (
     <Sidebar collapsible="icon" className="border-r-0">
@@ -125,12 +115,8 @@ export function AppSidebar() {
           </div>
           {!collapsed && (
             <div>
-              <h1 className="text-sm font-bold text-sidebar-accent-foreground font-heading tracking-tight">
-                SaludCRM
-              </h1>
-              <p className="text-[10px] text-sidebar-muted">
-                Gestión sanitaria
-              </p>
+              <h1 className="text-sm font-bold text-sidebar-accent-foreground font-heading tracking-tight">SaludCRM</h1>
+              <p className="text-[10px] text-sidebar-muted">Gestión sanitaria</p>
             </div>
           )}
         </div>
@@ -146,16 +132,15 @@ export function AppSidebar() {
         {!collapsed && (
           <div className="flex items-center gap-2 px-2">
             <div className="h-7 w-7 rounded-full bg-sidebar-accent flex items-center justify-center text-[11px] font-semibold text-sidebar-accent-foreground">
-              AG
+              {initials}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-sidebar-accent-foreground truncate">
-                Admin General
-              </p>
-              <p className="text-[10px] text-sidebar-muted truncate">
-                Gerencia
-              </p>
+              <p className="text-xs font-medium text-sidebar-accent-foreground truncate">{displayName}</p>
+              <p className="text-[10px] text-sidebar-muted truncate">{displayRole}</p>
             </div>
+            <button onClick={signOut} className="p-1 rounded hover:bg-sidebar-accent transition-colors" title="Cerrar sesión">
+              <LogOut className="h-3.5 w-3.5 text-sidebar-muted" />
+            </button>
           </div>
         )}
       </SidebarFooter>

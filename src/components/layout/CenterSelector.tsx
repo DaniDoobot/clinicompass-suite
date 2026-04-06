@@ -6,39 +6,72 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { useCenters } from "@/hooks/useCenters";
+import { createContext, useContext, useState, ReactNode } from "react";
 
-const centers = [
-  { id: "all", name: "Todos los centros" },
-  { id: "1", name: "Centro Madrid Norte" },
-  { id: "2", name: "Centro Madrid Sur" },
-  { id: "3", name: "Centro Barcelona" },
-  { id: "4", name: "Centro Valencia" },
-];
+interface CenterContextType {
+  selectedCenterId: string;
+  setSelectedCenterId: (id: string) => void;
+  selectedCenterName: string;
+}
+
+const CenterContext = createContext<CenterContextType>({
+  selectedCenterId: "all",
+  setSelectedCenterId: () => {},
+  selectedCenterName: "Todos los centros",
+});
+
+export function useCenterFilter() {
+  return useContext(CenterContext);
+}
+
+export function CenterProvider({ children }: { children: ReactNode }) {
+  const [selectedCenterId, setSelectedCenterId] = useState("all");
+  const { data: centers } = useCenters();
+  const selectedCenterName =
+    selectedCenterId === "all"
+      ? "Todos los centros"
+      : centers?.find((c) => c.id === selectedCenterId)?.name || "Todos los centros";
+
+  return (
+    <CenterContext.Provider value={{ selectedCenterId, setSelectedCenterId, selectedCenterName }}>
+      {children}
+    </CenterContext.Provider>
+  );
+}
 
 export function CenterSelector() {
-  const [selected, setSelected] = useState(centers[0]);
+  const { data: centers, isLoading } = useCenters();
+  const { selectedCenterId, setSelectedCenterId, selectedCenterName } = useCenterFilter();
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="sm" className="gap-2 text-sm font-medium">
           <Building2 className="h-4 w-4 text-primary" />
-          {selected.name}
+          {selectedCenterName}
           <ChevronDown className="h-3 w-3 text-muted-foreground" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-56">
-        {centers.map((center) => (
-          <DropdownMenuItem
-            key={center.id}
-            onClick={() => setSelected(center)}
-            className={selected.id === center.id ? "bg-primary/10 text-primary" : ""}
-          >
-            <Building2 className="h-4 w-4 mr-2" />
-            {center.name}
-          </DropdownMenuItem>
-        ))}
+        <DropdownMenuItem
+          onClick={() => setSelectedCenterId("all")}
+          className={selectedCenterId === "all" ? "bg-primary/10 text-primary" : ""}
+        >
+          <Building2 className="h-4 w-4 mr-2" />
+          Todos los centros
+        </DropdownMenuItem>
+        {!isLoading &&
+          centers?.map((center) => (
+            <DropdownMenuItem
+              key={center.id}
+              onClick={() => setSelectedCenterId(center.id)}
+              className={selectedCenterId === center.id ? "bg-primary/10 text-primary" : ""}
+            >
+              <Building2 className="h-4 w-4 mr-2" />
+              {center.name}
+            </DropdownMenuItem>
+          ))}
       </DropdownMenuContent>
     </DropdownMenu>
   );
