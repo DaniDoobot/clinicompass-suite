@@ -1,8 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { AuthProvider, useAuth } from "@/hooks/useAuth";
+import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
 import PipelinePage from "./pages/PipelinePage";
 import LeadsPage from "./pages/LeadsPage";
@@ -21,29 +23,58 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth();
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="animate-spin h-8 w-8 border-2 border-primary border-t-transparent rounded-full" />
+      </div>
+    );
+  }
+  if (!user) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+}
+
+function PublicRoute({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth();
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="animate-spin h-8 w-8 border-2 border-primary border-t-transparent rounded-full" />
+      </div>
+    );
+  }
+  if (user) return <Navigate to="/" replace />;
+  return <>{children}</>;
+}
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<DashboardPage />} />
-          <Route path="/pipeline" element={<PipelinePage />} />
-          <Route path="/leads" element={<LeadsPage />} />
-          <Route path="/pacientes" element={<PatientsPage />} />
-          <Route path="/pacientes/:id" element={<PatientDetailPage />} />
-          <Route path="/agenda" element={<AgendaPage />} />
-          <Route path="/centros" element={<CentersPage />} />
-          <Route path="/fisioterapia" element={<PhysioPage />} />
-          <Route path="/nutricion" element={<NutritionPage />} />
-          <Route path="/psicotecnicos" element={<PsychotechPage />} />
-          <Route path="/campanas" element={<CampaignsPage />} />
-          <Route path="/facturacion" element={<BillingPage />} />
-          <Route path="/documentos" element={<DocumentsPage />} />
-          <Route path="/configuracion" element={<SettingsPage />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+        <AuthProvider>
+          <Routes>
+            <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
+            <Route path="/" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+            <Route path="/pipeline" element={<ProtectedRoute><PipelinePage /></ProtectedRoute>} />
+            <Route path="/leads" element={<ProtectedRoute><LeadsPage /></ProtectedRoute>} />
+            <Route path="/pacientes" element={<ProtectedRoute><PatientsPage /></ProtectedRoute>} />
+            <Route path="/pacientes/:id" element={<ProtectedRoute><PatientDetailPage /></ProtectedRoute>} />
+            <Route path="/agenda" element={<ProtectedRoute><AgendaPage /></ProtectedRoute>} />
+            <Route path="/centros" element={<ProtectedRoute><CentersPage /></ProtectedRoute>} />
+            <Route path="/fisioterapia" element={<ProtectedRoute><PhysioPage /></ProtectedRoute>} />
+            <Route path="/nutricion" element={<ProtectedRoute><NutritionPage /></ProtectedRoute>} />
+            <Route path="/psicotecnicos" element={<ProtectedRoute><PsychotechPage /></ProtectedRoute>} />
+            <Route path="/campanas" element={<ProtectedRoute><CampaignsPage /></ProtectedRoute>} />
+            <Route path="/facturacion" element={<ProtectedRoute><BillingPage /></ProtectedRoute>} />
+            <Route path="/documentos" element={<ProtectedRoute><DocumentsPage /></ProtectedRoute>} />
+            <Route path="/configuracion" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
