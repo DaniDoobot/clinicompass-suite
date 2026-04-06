@@ -5,13 +5,17 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Plus, Search, Phone, Mail, MessageSquare, Loader2, Users } from "lucide-react";
 import { useLeads, useCreateLead } from "@/hooks/useLeads";
+import { useCreateInteraction } from "@/hooks/useInteractions";
 import { useCenters } from "@/hooks/useCenters";
 import { useCenterFilter } from "@/components/layout/CenterSelector";
+import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
@@ -41,7 +45,12 @@ export default function LeadsPage() {
   const [lineFilter, setLineFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [intDialogOpen, setIntDialogOpen] = useState(false);
+  const [intLeadId, setIntLeadId] = useState<string | null>(null);
+  const [intType, setIntType] = useState<string>("llamada");
+  const [intNotes, setIntNotes] = useState("");
   const { selectedCenterId } = useCenterFilter();
+  const { profile } = useAuth();
 
   const { data: leads, isLoading } = useLeads({
     business_line: lineFilter,
@@ -51,6 +60,7 @@ export default function LeadsPage() {
   });
   const { data: centers } = useCenters();
   const createLead = useCreateLead();
+  const createInteraction = useCreateInteraction();
 
   const [form, setForm] = useState({
     first_name: "", last_name: "", email: "", phone: "", company_name: "",
@@ -65,6 +75,7 @@ export default function LeadsPage() {
         business_line: form.business_line as any,
         center_id: form.center_id || null,
         estimated_value: form.estimated_value ? parseFloat(form.estimated_value) : null,
+        notes: form.notes || null,
       });
       toast.success("Lead creado correctamente");
       setDialogOpen(false);
@@ -74,15 +85,42 @@ export default function LeadsPage() {
     }
   };
 
+  const openInteraction = (leadId: string, type: string) => {
+    setIntLeadId(leadId);
+    setIntType(type);
+    setIntNotes("");
+    setIntDialogOpen(true);
+  };
+
+  const handleAddInteraction = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!intLeadId) return;
+    try {
+      await createInteraction.mutateAsync({
+        lead_id: intLeadId,
+        type: intType as any,
+        notes: intNotes || null,
+        created_by: profile?.id || null,
+      });
+      toast.success("Interacción registrada");
+      setIntDialogOpen(false);
+    } catch (err: any) {
+      toast.error(err.message || "Error al registrar interacción");
+    }
+  };
+
   return (
     <AppLayout>
       <PageHeader title="Leads" description={`${leads?.length || 0} leads en el sistema`}>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm" className="gap-2"><Plus className="h-4 w-4" /> Nuevo lead</Button>
-          </DialogTrigger>
+          <Button size="sm" className="gap-2" onClick={() => setDialogOpen(true)}>
+            <Plus className="h-4 w-4" /> Nuevo lead
+          </Button>
           <DialogContent className="max-w-lg">
-            <DialogHeader><DialogTitle className="font-heading">Nuevo lead</DialogTitle></DialogHeader>
+            <DialogHeader>
+              <DialogTitle className="font-heading">Nuevo lead</DialogTitle>
+              <DialogDescription>Crea un nuevo lead comercial</DialogDescription>
+            </DialogHeader>
             <form onSubmit={handleCreate} className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
@@ -132,6 +170,10 @@ export default function LeadsPage() {
                       {centers?.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
+                </div>
+                <div className="space-y-1.5 col-span-2">
+                  <Label className="text-xs">Notas</Label>
+                  <Textarea className="min-h-[60px]" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
                 </div>
               </div>
               <div className="flex justify-end gap-2">
@@ -222,9 +264,39 @@ export default function LeadsPage() {
                     <TableCell className="text-sm text-muted-foreground">{format(new Date(l.created_at), "dd/MM/yyyy")}</TableCell>
                     <TableCell>
                       <div className="flex gap-1">
-                        <button className="p-1.5 rounded-md hover:bg-muted transition-colors"><Phone className="h-3.5 w-3.5 text-muted-foreground" /></button>
-                        <button className="p-1.5 rounded-md hover:bg-muted transition-colors"><Mail className="h-3.5 w-3.5 text-muted-foreground" /></button>
-                        <button className="p-1.5 rounded-md hover:bg-muted transition-colors"><MessageSquare className="h-3.5 w-3.5 text-muted-foreground" /></button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              className="p-1.5 rounded-md hover:bg-muted transition-colors"
+                              onClick={() => openInteraction(l.id, "llamada")}
+                            >
+                              <Phone className="h-3.5 w-3.5 text-muted-foreground" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent>Registrar llamada</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              className="p-1.5 rounded-md hover:bg-muted transition-colors"
+                              onClick={() => openInteraction(l.id, "email")}
+                            >
+                              <Mail className="h-3.5 w-3.5 text-muted-foreground" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent>Registrar email</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              className="p-1.5 rounded-md hover:bg-muted transition-colors"
+                              onClick={() => openInteraction(l.id, "nota")}
+                            >
+                              <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent>Añadir nota interna</TooltipContent>
+                        </Tooltip>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -234,6 +306,38 @@ export default function LeadsPage() {
           </Table>
         )}
       </div>
+
+      {/* Interaction dialog */}
+      <Dialog open={intDialogOpen} onOpenChange={setIntDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="font-heading">
+              {intType === "llamada" ? "📞 Registrar llamada" : intType === "email" ? "📧 Registrar email" : "📝 Añadir nota interna"}
+            </DialogTitle>
+            <DialogDescription>
+              {intType === "llamada" ? "Registra los detalles de la llamada realizada" : intType === "email" ? "Registra el email enviado o recibido" : "Añade una nota o comentario interno sobre este lead"}
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleAddInteraction} className="space-y-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Notas</Label>
+              <Textarea
+                className="min-h-[80px]"
+                placeholder={intType === "llamada" ? "Resumen de la llamada..." : intType === "email" ? "Asunto y contenido del email..." : "Nota interna..."}
+                value={intNotes}
+                onChange={(e) => setIntNotes(e.target.value)}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setIntDialogOpen(false)}>Cancelar</Button>
+              <Button type="submit" size="sm" disabled={createInteraction.isPending}>
+                {createInteraction.isPending && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
+                Registrar
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

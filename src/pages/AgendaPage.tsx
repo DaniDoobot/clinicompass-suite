@@ -100,7 +100,10 @@ export default function AgendaPage() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    const startDt = `${form.date}T${form.start_time}:00`;
+    if (!form.patient_id) { toast.error("Selecciona un paciente"); return; }
+    if (!form.center_id) { toast.error("Selecciona un centro"); return; }
+    if (!form.date || !form.start_time) { toast.error("Selecciona fecha y hora"); return; }
+    const startDt = new Date(`${form.date}T${form.start_time}:00`).toISOString();
     const endDt = new Date(new Date(startDt).getTime() + parseInt(form.duration) * 60000).toISOString();
     try {
       await createApt.mutateAsync({
@@ -112,10 +115,10 @@ export default function AgendaPage() {
         end_time: endDt,
         notes: form.notes || null,
       });
-      toast.success("Cita creada");
+      toast.success("Cita creada correctamente");
       setNewOpen(false);
       resetForm();
-    } catch (err: any) { toast.error(err.message); }
+    } catch (err: any) { toast.error(err.message || "Error al crear la cita"); }
   };
 
   const changeStatus = async (id: string, status: string) => {

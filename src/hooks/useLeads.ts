@@ -50,11 +50,44 @@ export function usePipelineStages(businessLine?: string) {
   });
 }
 
+/** Fetch the first stage for a given business line (used when creating leads from LeadsPage) */
+export function useFirstStage(businessLine: string) {
+  return useQuery({
+    queryKey: ["first-stage", businessLine],
+    enabled: !!businessLine && businessLine !== "all",
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("pipeline_stages")
+        .select("id")
+        .eq("business_line", businessLine as any)
+        .order("position", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
 export function useCreateLead() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (lead: LeadInsert) => {
-      const { data, error } = await supabase.from("leads").insert(lead).select().single();
+      // If no pipeline_stage_id provided, fetch the first stage for this business_line
+      let finalLead = { ...lead };
+      if (!finalLead.pipeline_stage_id && finalLead.business_line) {
+        const { data: firstStage } = await supabase
+          .from("pipeline_stages")
+          .select("id")
+          .eq("business_line", finalLead.business_line)
+          .order("position", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        if (firstStage) {
+          finalLead.pipeline_stage_id = firstStage.id;
+        }
+      }
+      const { data, error } = await supabase.from("leads").insert(finalLead).select().single();
       if (error) throw error;
       return data;
     },
