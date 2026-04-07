@@ -97,7 +97,7 @@ export function useCreateBusiness() {
           .maybeSingle();
         if (firstStage) business.stage_id = firstStage.id;
       }
-      const { data, error } = await supabase.from("businesses").insert(business).select().single();
+      const { data, error } = await supabase.from("businesses").insert(business as any).select().single();
       if (error) throw error;
       return data;
     },
@@ -112,7 +112,7 @@ export function useUpdateBusiness() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, ...updates }: { id: string;[key: string]: any }) => {
-      const { data, error } = await supabase.from("businesses").update(updates).eq("id", id).select().single();
+      const { data, error } = await supabase.from("businesses").update(updates as any).eq("id", id).select().single();
       if (error) throw error;
       return data;
     },
@@ -143,7 +143,7 @@ export function useCreateStageChange() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (entry: Record<string, any>) => {
-      const { data, error } = await supabase.from("business_stage_history").insert(entry).select().single();
+      const { data, error } = await supabase.from("business_stage_history").insert(entry as any).select().single();
       if (error) throw error;
       return data;
     },

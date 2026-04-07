@@ -76,7 +76,7 @@ export function useCreateContact() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (contact: Record<string, any>) => {
-      const { data, error } = await supabase.from("contacts").insert(contact).select().single();
+      const { data, error } = await supabase.from("contacts").insert(contact as any).select().single();
       if (error) throw error;
       return data;
     },
@@ -90,7 +90,7 @@ export function useUpdateContact() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, ...updates }: { id: string;[key: string]: any }) => {
-      const { data, error } = await supabase.from("contacts").update(updates).eq("id", id).select().single();
+      const { data, error } = await supabase.from("contacts").update(updates as any).eq("id", id).select().single();
       if (error) throw error;
       return data;
     },
