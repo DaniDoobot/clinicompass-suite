@@ -52,7 +52,7 @@ export function useQuotes(filters?: { center_id?: string; status?: string; searc
         .select("*, contact:contacts(first_name, last_name, company_name), center:centers(name)")
         .order("created_at", { ascending: false });
       if (filters?.center_id && filters.center_id !== "all") q = q.eq("center_id", filters.center_id);
-      if (filters?.status && filters.status !== "all") q = q.eq("status", filters.status);
+      if (filters?.status && filters.status !== "all") q = q.eq("status", filters.status as any);
       if (filters?.search) {
         q = q.or(`quote_number.ilike.%${filters.search}%,fiscal_name.ilike.%${filters.search}%`);
       }
@@ -143,8 +143,8 @@ export function useInvoices(filters?: { center_id?: string; status?: string; inv
         .select("*, contact:contacts(first_name, last_name, company_name), center:centers(name), series:invoice_series(prefix)")
         .order("created_at", { ascending: false });
       if (filters?.center_id && filters.center_id !== "all") q = q.eq("center_id", filters.center_id);
-      if (filters?.status && filters.status !== "all") q = q.eq("status", filters.status);
-      if (filters?.invoice_type && filters.invoice_type !== "all") q = q.eq("invoice_type", filters.invoice_type);
+      if (filters?.status && filters.status !== "all") q = q.eq("status", filters.status as any);
+      if (filters?.invoice_type && filters.invoice_type !== "all") q = q.eq("invoice_type", filters.invoice_type as any);
       if (filters?.search) {
         q = q.or(`invoice_number.ilike.%${filters.search}%,fiscal_name.ilike.%${filters.search}%`);
       }
