@@ -34,7 +34,7 @@ export function useAvailabilitySlots(filters?: {
         query = query.lte("date", filters.date_to);
       }
       if (filters?.status && filters.status !== "all") {
-        query = query.eq("status", filters.status);
+        query = query.eq("status", filters.status as "disponible" | "ocupado" | "bloqueado");
       }
 
       const { data, error } = await query;
