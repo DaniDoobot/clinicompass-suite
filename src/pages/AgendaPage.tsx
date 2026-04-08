@@ -439,18 +439,31 @@ export default function AgendaPage() {
                       </StatusBadge>
                     </td>
                     <td className="p-3">
-                      {slot.status === "disponible" ? (
-                        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => {
-                          setSelectedSlot(slot);
-                          setBookForm({ contact_id: "", duration: String(slot.duration_minutes), notes: "" });
-                          setBookOpen(true);
-                        }}>Reservar</Button>
-                      ) : slot.status === "ocupado" && slot.appointment_id ? (
-                        <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => {
-                          const apt = appointments?.find((a: any) => a.id === slot.appointment_id);
-                          if (apt) { setSelectedApt(apt); setSelectedSlot(slot); setDetailOpen(true); }
-                        }}>Ver cita</Button>
-                      ) : null}
+                      <div className="flex gap-1">
+                        {slot.status === "disponible" && (
+                          <>
+                            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => {
+                              setSelectedSlot(slot);
+                              setBookForm({ contact_id: "", duration: String(slot.duration_minutes), notes: "" });
+                              setBookOpen(true);
+                            }}>Reservar</Button>
+                            <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive" onClick={() => handleDeleteSlot(slot.id)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </>
+                        )}
+                        {slot.status === "ocupado" && slot.appointment_id && (
+                          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => {
+                            const apt = appointments?.find((a: any) => a.id === slot.appointment_id);
+                            if (apt) { setSelectedApt(apt); setSelectedSlot(slot); setDetailOpen(true); }
+                          }}>Ver cita</Button>
+                        )}
+                        {slot.status === "bloqueado" && (
+                          <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive" onClick={() => handleDeleteSlot(slot.id)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

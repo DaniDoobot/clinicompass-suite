@@ -73,6 +73,8 @@ export default function InvoicesPage({ invoiceType = "all" }: { invoiceType?: st
   const handleCreate = async () => {
     if (!form.contact_id || !form.center_id) { toast.error("Selecciona contacto y centro"); return; }
     if (total <= 0) { toast.error("El importe debe ser mayor que 0"); return; }
+    if (lines.some(l => l.quantity * l.unit_price === 0)) { toast.error("No se permiten líneas con importe 0 €"); return; }
+    if (lines.some(l => !l.description.trim())) { toast.error("Completa todos los conceptos"); return; }
     
     const contact = contacts?.find((c: any) => c.id === form.contact_id);
     
@@ -123,6 +125,16 @@ export default function InvoicesPage({ invoiceType = "all" }: { invoiceType?: st
   const handlePayment = async () => {
     if (!payForm.amount || Number(payForm.amount) <= 0) { toast.error("Introduce un importe válido"); return; }
     if (!payForm.payment_method_id) { toast.error("Selecciona método de pago"); return; }
+    
+    // Validate payment doesn't exceed pending amount
+    const invoice = invoices?.find((i: any) => i.id === selectedInvoiceId);
+    if (invoice) {
+      const pending = Number(invoice.total) - Number(invoice.paid_amount);
+      if (Number(payForm.amount) > pending) {
+        toast.error(`El pago (€${Number(payForm.amount).toFixed(2)}) supera el pendiente (€${pending.toFixed(2)})`);
+        return;
+      }
+    }
     try {
       await createPayment.mutateAsync({
         invoice_id: selectedInvoiceId,
