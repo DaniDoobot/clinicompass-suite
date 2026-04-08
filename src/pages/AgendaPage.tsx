@@ -519,13 +519,20 @@ export default function AgendaPage() {
                               return (
                                 <div
                                   key={slot.id}
-                                  className={`rounded-md border p-1.5 cursor-pointer transition-colors ${slotStatusColors.disponible}`}
+                                  className={`rounded-md border p-1.5 cursor-pointer transition-colors relative group ${slotStatusColors.disponible}`}
                                   onClick={() => {
                                     setSelectedSlot(slot);
                                     setBookForm({ contact_id: "", duration: String(slot.duration_minutes), notes: "" });
                                     setBookOpen(true);
                                   }}
                                 >
+                                  <button
+                                    className="absolute top-0.5 right-0.5 hidden group-hover:flex h-4 w-4 items-center justify-center rounded bg-destructive/80 text-white"
+                                    onClick={(e) => { e.stopPropagation(); handleDeleteSlot(slot.id); }}
+                                    title="Eliminar hueco"
+                                  >
+                                    <X className="h-2.5 w-2.5" />
+                                  </button>
                                   <div className="flex items-center gap-1">
                                     <Clock className="h-3 w-3 text-success" />
                                     <span className="text-[10px] font-medium text-success">Disponible</span>
