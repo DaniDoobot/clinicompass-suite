@@ -317,11 +317,22 @@ export default function AgendaPage() {
               {staff?.map((s: any) => <SelectItem key={s.id} value={s.id}>{s.first_name} {s.last_name}</SelectItem>)}
             </SelectContent>
           </Select>
+          <Select value={specialtyFilter} onValueChange={setSpecialtyFilter}>
+            <SelectTrigger className="w-[160px] h-9"><SelectValue placeholder="Especialidad" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas</SelectItem>
+              <SelectItem value="fisioterapia">Fisioterapia</SelectItem>
+              <SelectItem value="nutricion">Nutrición</SelectItem>
+              <SelectItem value="psicotecnicos">Psicotécnicos</SelectItem>
+            </SelectContent>
+          </Select>
           <Select value={serviceFilter} onValueChange={setServiceFilter}>
             <SelectTrigger className="w-[180px] h-9"><SelectValue placeholder="Servicio" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos los servicios</SelectItem>
-              {services?.map((s: any) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+              {(services || [])
+                .filter((s: any) => specialtyFilter === "all" || s.business_line === specialtyFilter)
+                .map((s: any) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
             </SelectContent>
           </Select>
           {view === "list" && (
