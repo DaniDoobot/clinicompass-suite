@@ -10,8 +10,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Settings, Users, Tag, Shield, Receipt, Plus, Loader2 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Settings, Users, Tag, Shield, Receipt, Plus, Loader2, Pencil } from "lucide-react";
 import { useInvoiceSeries, useCreateInvoiceSeries } from "@/hooks/useBilling";
+import { useAllServices, useCreateService, useUpdateService } from "@/hooks/useServicesAdmin";
 import { useCenters } from "@/hooks/useCenters";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -38,6 +40,60 @@ export default function SettingsPage() {
   const createSeries = useCreateInvoiceSeries();
   const [openSeries, setOpenSeries] = useState(false);
   const [seriesForm, setSeriesForm] = useState({ center_id: "", prefix: "", doc_type: "factura" });
+
+  // Services state
+  const { data: allServices, isLoading: servicesLoading } = useAllServices();
+  const createService = useCreateService();
+  const updateService = useUpdateService();
+  const [openService, setOpenService] = useState(false);
+  const [editingService, setEditingService] = useState<any>(null);
+  const [svcForm, setSvcForm] = useState({
+    name: "", business_line: "fisioterapia", duration_minutes: "60", price: "0", active: true,
+  });
+
+  const resetSvcForm = () => setSvcForm({ name: "", business_line: "fisioterapia", duration_minutes: "60", price: "0", active: true });
+
+  const handleSaveService = async () => {
+    if (!svcForm.name) { toast.error("El nombre del servicio es obligatorio"); return; }
+    try {
+      const payload = {
+        name: svcForm.name,
+        business_line: svcForm.business_line,
+        duration_minutes: parseInt(svcForm.duration_minutes) || 60,
+        price: parseFloat(svcForm.price) || 0,
+        active: svcForm.active,
+      };
+      if (editingService) {
+        await updateService.mutateAsync({ id: editingService.id, ...payload });
+        toast.success("Servicio actualizado");
+      } else {
+        await createService.mutateAsync(payload);
+        toast.success("Servicio creado");
+      }
+      setOpenService(false);
+      resetSvcForm();
+      setEditingService(null);
+    } catch (e: any) { toast.error(e.message); }
+  };
+
+  const openEditService = (svc: any) => {
+    setEditingService(svc);
+    setSvcForm({
+      name: svc.name,
+      business_line: svc.business_line,
+      duration_minutes: String(svc.duration_minutes),
+      price: String(svc.price),
+      active: svc.active,
+    });
+    setOpenService(true);
+  };
+
+  const toggleServiceActive = async (svc: any) => {
+    try {
+      await updateService.mutateAsync({ id: svc.id, active: !svc.active });
+      toast.success(svc.active ? "Servicio desactivado" : "Servicio activado");
+    } catch (e: any) { toast.error(e.message); }
+  };
 
   // Team state
   const [openUser, setOpenUser] = useState(false);
