@@ -409,104 +409,110 @@ export default function AgendaPage() {
       ) : (
         /* Day / Week grid view */
         <div className="bg-card rounded-xl border shadow-sm overflow-hidden">
-          <div className="grid border-b" style={{ gridTemplateColumns: `70px repeat(${weekDays.length}, 1fr)` }}>
-            <div className="p-2 border-r bg-muted/30" />
-            {weekDays.map(d => (
-              <div key={d.toISOString()} className={`p-3 text-center border-r last:border-r-0 ${isToday(d) ? "bg-primary/5" : "bg-muted/30"}`}>
-                <p className="text-xs text-muted-foreground">{format(d, "EEE", { locale: es })}</p>
-                <p className={`text-sm font-semibold ${isToday(d) ? "text-primary" : "text-foreground"}`}>{format(d, "d MMM", { locale: es })}</p>
-              </div>
-            ))}
-          </div>
-          <div className="max-h-[600px] overflow-auto">
-            {hours.map(hour => (
-              <div key={hour} className="border-b last:border-b-0 min-h-[64px]" style={{ display: "grid", gridTemplateColumns: `70px repeat(${weekDays.length}, 1fr)` }}>
-                <div className="p-2 border-r flex items-start justify-end pr-3">
-                  <span className="text-xs text-muted-foreground font-mono">{String(hour).padStart(2, "0")}:00</span>
-                </div>
-                {weekDays.map(day => {
-                  const cellSlots = getSlotsForCell(day, hour);
-                  const cellApts = getAptsForCell(day, hour);
+          <div className="overflow-auto max-h-[650px]">
+            <table className="w-full border-collapse" style={{ minWidth: weekDays.length * 140 + 70 }}>
+              <thead className="sticky top-0 z-10 bg-card">
+                <tr className="border-b">
+                  <th className="w-[70px] min-w-[70px] p-2 border-r bg-muted/30" />
+                  {weekDays.map(d => (
+                    <th key={d.toISOString()} className={`p-3 text-center border-r last:border-r-0 ${isToday(d) ? "bg-primary/5" : "bg-muted/30"}`}>
+                      <p className="text-xs text-muted-foreground">{format(d, "EEE", { locale: es })}</p>
+                      <p className={`text-sm font-semibold ${isToday(d) ? "text-primary" : "text-foreground"}`}>{format(d, "d MMM", { locale: es })}</p>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {hours.map(hour => (
+                  <tr key={hour} className="border-b last:border-b-0" style={{ height: 64 }}>
+                    <td className="w-[70px] min-w-[70px] p-2 border-r align-top text-right pr-3">
+                      <span className="text-xs text-muted-foreground font-mono">{String(hour).padStart(2, "0")}:00</span>
+                    </td>
+                    {weekDays.map(day => {
+                      const cellSlots = getSlotsForCell(day, hour);
+                      const cellApts = getAptsForCell(day, hour);
 
-                  return (
-                    <div key={day.toISOString()} className="border-r last:border-r-0 p-0.5 space-y-0.5">
-                      {/* Show availability slots */}
-                      {cellSlots.map((slot: any) => {
-                        if (slot.status === "disponible") {
-                          return (
-                            <div
-                              key={slot.id}
-                              className={`rounded-md border p-1.5 cursor-pointer transition-colors ${slotStatusColors.disponible}`}
-                              onClick={() => {
-                                setSelectedSlot(slot);
-                                setBookForm({ contact_id: "", duration: String(slot.duration_minutes), notes: "" });
-                                setBookOpen(true);
-                              }}
-                            >
-                              <div className="flex items-center gap-1">
-                                <Clock className="h-3 w-3 text-success" />
-                                <span className="text-[10px] font-medium text-success">Disponible</span>
+                      return (
+                        <td key={day.toISOString()} className="border-r last:border-r-0 p-0.5 align-top">
+                          <div className="space-y-0.5">
+                          {cellSlots.map((slot: any) => {
+                            if (slot.status === "disponible") {
+                              return (
+                                <div
+                                  key={slot.id}
+                                  className={`rounded-md border p-1.5 cursor-pointer transition-colors ${slotStatusColors.disponible}`}
+                                  onClick={() => {
+                                    setSelectedSlot(slot);
+                                    setBookForm({ contact_id: "", duration: String(slot.duration_minutes), notes: "" });
+                                    setBookOpen(true);
+                                  }}
+                                >
+                                  <div className="flex items-center gap-1">
+                                    <Clock className="h-3 w-3 text-success" />
+                                    <span className="text-[10px] font-medium text-success">Disponible</span>
+                                  </div>
+                                  <p className="text-[10px] text-muted-foreground">{slot.start_time.slice(0, 5)}–{slot.end_time.slice(0, 5)}</p>
+                                  {slot.professional && <p className="text-[10px] text-muted-foreground truncate">{slot.professional.first_name} {slot.professional.last_name}</p>}
+                                  {slot.service && <p className="text-[9px] text-muted-foreground truncate">{slot.service.name}</p>}
+                                </div>
+                              );
+                            }
+                            if (slot.status === "ocupado") {
+                              const apt = appointments?.find((a: any) => a.id === slot.appointment_id);
+                              if (!apt) return null;
+                              const stCfg = statusConfig[apt.status] || statusConfig.pendiente;
+                              const bl = apt.service?.business_line || "";
+                              return (
+                                <div
+                                  key={slot.id}
+                                  className={`rounded-md border-l-[3px] p-1.5 cursor-pointer hover:shadow-sm transition-shadow ${lineColors[bl] || "border-l-muted bg-muted/50"}`}
+                                  onClick={() => { setSelectedApt(apt); setSelectedSlot(slot); setDetailOpen(true); }}
+                                >
+                                  <p className="text-xs font-medium text-foreground truncate">
+                                    {apt.patient?.first_name} {apt.patient?.last_name}
+                                  </p>
+                                  <div className="flex items-center justify-between mt-0.5">
+                                    <span className="text-[10px] text-muted-foreground">{apt.service?.name || "-"}</span>
+                                    <StatusBadge variant={stCfg.variant} dot={false}><span className="text-[9px]">{stCfg.label}</span></StatusBadge>
+                                  </div>
+                                  {apt.professional && <p className="text-[10px] text-muted-foreground mt-0.5">{apt.professional.first_name}</p>}
+                                </div>
+                              );
+                            }
+                            if (slot.status === "bloqueado") {
+                              return (
+                                <div key={slot.id} className={`rounded-md border p-1.5 ${slotStatusColors.bloqueado}`}>
+                                  <span className="text-[10px] text-muted-foreground">Bloqueado</span>
+                                </div>
+                              );
+                            }
+                            return null;
+                          })}
+                          {cellApts.filter((a: any) => !cellSlots.some((s: any) => s.appointment_id === a.id)).map((apt: any) => {
+                            const stCfg = statusConfig[apt.status] || statusConfig.pendiente;
+                            const bl = apt.service?.business_line || "";
+                            return (
+                              <div
+                                key={apt.id}
+                                className={`rounded-md border-l-[3px] p-1.5 cursor-pointer hover:shadow-sm transition-shadow ${lineColors[bl] || "border-l-muted bg-muted/50"}`}
+                                onClick={() => { setSelectedApt(apt); setSelectedSlot(null); setDetailOpen(true); }}
+                              >
+                                <p className="text-xs font-medium text-foreground truncate">{apt.patient?.first_name} {apt.patient?.last_name}</p>
+                                <div className="flex items-center justify-between mt-0.5">
+                                  <span className="text-[10px] text-muted-foreground">{format(new Date(apt.start_time), "HH:mm")}</span>
+                                  <StatusBadge variant={stCfg.variant} dot={false}><span className="text-[9px]">{stCfg.label}</span></StatusBadge>
+                                </div>
                               </div>
-                              <p className="text-[10px] text-muted-foreground">{slot.start_time.slice(0, 5)}–{slot.end_time.slice(0, 5)}</p>
-                              {slot.professional && <p className="text-[10px] text-muted-foreground truncate">{slot.professional.first_name} {slot.professional.last_name}</p>}
-                              {slot.service && <p className="text-[9px] text-muted-foreground truncate">{slot.service.name}</p>}
-                            </div>
-                          );
-                        }
-                        if (slot.status === "ocupado") {
-                          const apt = appointments?.find((a: any) => a.id === slot.appointment_id);
-                          if (!apt) return null;
-                          const stCfg = statusConfig[apt.status] || statusConfig.pendiente;
-                          const bl = apt.service?.business_line || "";
-                          return (
-                            <div
-                              key={slot.id}
-                              className={`rounded-md border-l-[3px] p-1.5 cursor-pointer hover:shadow-sm transition-shadow ${lineColors[bl] || "border-l-muted bg-muted/50"}`}
-                              onClick={() => { setSelectedApt(apt); setSelectedSlot(slot); setDetailOpen(true); }}
-                            >
-                              <p className="text-xs font-medium text-foreground truncate">
-                                {apt.patient?.first_name} {apt.patient?.last_name}
-                              </p>
-                              <div className="flex items-center justify-between mt-0.5">
-                                <span className="text-[10px] text-muted-foreground">{apt.service?.name || "-"}</span>
-                                <StatusBadge variant={stCfg.variant} dot={false}><span className="text-[9px]">{stCfg.label}</span></StatusBadge>
-                              </div>
-                              {apt.professional && <p className="text-[10px] text-muted-foreground mt-0.5">{apt.professional.first_name}</p>}
-                            </div>
-                          );
-                        }
-                        if (slot.status === "bloqueado") {
-                          return (
-                            <div key={slot.id} className={`rounded-md border p-1.5 ${slotStatusColors.bloqueado}`}>
-                              <span className="text-[10px] text-muted-foreground">Bloqueado</span>
-                            </div>
-                          );
-                        }
-                        return null;
-                      })}
-                      {/* Show appointments without slots */}
-                      {cellApts.filter((a: any) => !cellSlots.some((s: any) => s.appointment_id === a.id)).map((apt: any) => {
-                        const stCfg = statusConfig[apt.status] || statusConfig.pendiente;
-                        const bl = apt.service?.business_line || "";
-                        return (
-                          <div
-                            key={apt.id}
-                            className={`rounded-md border-l-[3px] p-1.5 cursor-pointer hover:shadow-sm transition-shadow ${lineColors[bl] || "border-l-muted bg-muted/50"}`}
-                            onClick={() => { setSelectedApt(apt); setSelectedSlot(null); setDetailOpen(true); }}
-                          >
-                            <p className="text-xs font-medium text-foreground truncate">{apt.patient?.first_name} {apt.patient?.last_name}</p>
-                            <div className="flex items-center justify-between mt-0.5">
-                              <span className="text-[10px] text-muted-foreground">{format(new Date(apt.start_time), "HH:mm")}</span>
-                              <StatusBadge variant={stCfg.variant} dot={false}><span className="text-[9px]">{stCfg.label}</span></StatusBadge>
-                            </div>
+                            );
+                          })}
                           </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
