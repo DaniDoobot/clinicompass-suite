@@ -247,9 +247,23 @@ export default function AgendaPage() {
     e.preventDefault();
     if (!selectedSlot || !bookForm.contact_id) { toast.error("Selecciona un contacto"); return; }
     const dur = parseInt(bookForm.duration) || selectedSlot.duration_minutes;
-    const [sh, sm] = selectedSlot.start_time.split(":").map(Number);
     const startDt = new Date(`${selectedSlot.date}T${selectedSlot.start_time}:00`).toISOString();
     const endDt = new Date(new Date(`${selectedSlot.date}T${selectedSlot.start_time}:00`).getTime() + dur * 60000).toISOString();
+    
+    // Check for overlapping appointments for the same professional
+    if (selectedSlot.professional_id && appointments) {
+      const overlap = appointments.find((a: any) => 
+        a.professional_id === selectedSlot.professional_id &&
+        a.status !== "cancelada" &&
+        new Date(a.start_time) < new Date(endDt) &&
+        new Date(a.end_time) > new Date(startDt)
+      );
+      if (overlap) {
+        toast.error(`El profesional ya tiene una cita en ese horario (${format(new Date(overlap.start_time), "HH:mm")}–${format(new Date(overlap.end_time), "HH:mm")})`);
+        return;
+      }
+    }
+    
     try {
       await bookSlot.mutateAsync({
         slotId: selectedSlot.id,
