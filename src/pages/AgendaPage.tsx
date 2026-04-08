@@ -11,9 +11,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
-import { Plus, ChevronLeft, ChevronRight, Loader2, Clock, X, CalendarPlus, Wand2, List, User, MapPin } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, Loader2, Clock, X, CalendarPlus, Wand2, List, User, MapPin, Trash2 } from "lucide-react";
 import { useAppointments, useCreateAppointment, useUpdateAppointment, useStaffProfiles, useServices } from "@/hooks/useAppointments";
-import { useAvailabilitySlots, useCreateAvailabilitySlotsBatch, useBookSlot, useFreeSlot, useUpdateAvailabilitySlot } from "@/hooks/useAvailability";
+import { useAvailabilitySlots, useCreateAvailabilitySlotsBatch, useBookSlot, useFreeSlot, useUpdateAvailabilitySlot, useDeleteAvailabilitySlot } from "@/hooks/useAvailability";
 import { useContacts } from "@/hooks/useContacts";
 import { useCenters } from "@/hooks/useCenters";
 import { useCenterFilter } from "@/components/layout/CenterSelector";
@@ -99,6 +99,7 @@ export default function AgendaPage() {
   const bookSlot = useBookSlot();
   const freeSlotMut = useFreeSlot();
   const updateSlot = useUpdateAvailabilitySlot();
+  const deleteSlot = useDeleteAvailabilitySlot();
   const updateApt = useUpdateAppointment();
 
   const isLoading = slotsLoading || aptsLoading;
@@ -173,6 +174,30 @@ export default function AgendaPage() {
     return result;
   };
 
+  // Check overlap against existing slots
+  const checkOverlap = (newSlots: any[]) => {
+    if (!slots) return [];
+    const overlapping: string[] = [];
+    for (const ns of newSlots) {
+      for (const existing of slots as any[]) {
+        if (existing.professional_id === ns.professional_id && existing.date === ns.date && existing.center_id === ns.center_id) {
+          if (ns.start_time < existing.end_time && ns.end_time > existing.start_time) {
+            overlapping.push(`${ns.date} ${ns.start_time}-${ns.end_time}`);
+            break;
+          }
+        }
+      }
+    }
+    return overlapping;
+  };
+
+  const handleDeleteSlot = async (slotId: string) => {
+    try {
+      await deleteSlot.mutateAsync(slotId);
+      toast.success("Hueco eliminado");
+    } catch (err: any) { toast.error(err.message); }
+  };
+
   const handleCreateSlots = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!slotForm.center_id || !slotForm.professional_id || !slotForm.date_from || !slotForm.date_to) {
@@ -181,6 +206,14 @@ export default function AgendaPage() {
     }
     const newSlots = generateSlots(slotForm);
     if (newSlots.length === 0) { toast.error("No se generaron huecos con estos parámetros"); return; }
+    
+    // Check for overlaps
+    const overlaps = checkOverlap(newSlots);
+    if (overlaps.length > 0) {
+      toast.error(`Hay ${overlaps.length} hueco(s) que solapan con disponibilidad existente. Ajusta las horas.`);
+      return;
+    }
+    
     try {
       await createSlotsBatch.mutateAsync(newSlots);
       toast.success(`${newSlots.length} huecos creados correctamente`);
@@ -196,6 +229,13 @@ export default function AgendaPage() {
     }
     const newSlots = generateSlots(demoForm);
     if (newSlots.length === 0) { toast.error("No se generaron huecos"); return; }
+    
+    const overlaps = checkOverlap(newSlots);
+    if (overlaps.length > 0) {
+      toast.error(`Hay ${overlaps.length} hueco(s) que solapan con disponibilidad existente`);
+      return;
+    }
+    
     try {
       await createSlotsBatch.mutateAsync(newSlots);
       toast.success(`Demo: ${newSlots.length} huecos ficticios generados`);
