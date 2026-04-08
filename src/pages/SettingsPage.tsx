@@ -203,7 +203,7 @@ export default function SettingsPage() {
       // Insert new roles
       if (editRoles.length > 0) {
         const { error: insErr } = await supabase.from("user_roles").insert(
-          editRoles.map(role => ({ user_id: editingStaff.user_id, role }))
+          editRoles.map(role => ({ user_id: editingStaff.user_id, role: role as any }))
         );
         if (insErr) throw insErr;
       }
