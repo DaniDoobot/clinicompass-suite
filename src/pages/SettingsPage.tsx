@@ -575,6 +575,35 @@ export default function SettingsPage() {
               </div>
             </DialogContent>
           </Dialog>
+
+          {/* Edit roles dialog */}
+          <Dialog open={!!editingStaff} onOpenChange={(open) => { if (!open) setEditingStaff(null); }}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Editar roles — {editingStaff?.first_name} {editingStaff?.last_name}</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  {ALL_ROLES.map((role) => (
+                    <label key={role} className="flex items-center gap-2 p-2 rounded-lg bg-muted/30 cursor-pointer hover:bg-muted/50 transition-colors">
+                      <Checkbox
+                        checked={editRoles.includes(role)}
+                        onCheckedChange={() => setEditRoles(prev => prev.includes(role) ? prev.filter(r => r !== role) : [...prev, role])}
+                      />
+                      <span className="text-sm">{ROLE_LABELS[role] || role}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 mt-2">
+                <Button variant="outline" onClick={() => setEditingStaff(null)}>Cancelar</Button>
+                <Button onClick={handleSaveRoles} disabled={savingRoles}>
+                  {savingRoles && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                  Guardar roles
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
         </TabsContent>
       </Tabs>
     </AppLayout>
