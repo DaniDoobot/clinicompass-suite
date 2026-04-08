@@ -49,6 +49,7 @@ export default function AgendaPage() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [professionalFilter, setProfessionalFilter] = useState("all");
   const [serviceFilter, setServiceFilter] = useState("all");
+  const [specialtyFilter, setSpecialtyFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const { selectedCenterId } = useCenterFilter();
 
