@@ -11,9 +11,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
-import { Plus, ChevronLeft, ChevronRight, Loader2, Clock, X, CalendarPlus, Wand2, List, User, MapPin } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, Loader2, Clock, X, CalendarPlus, Wand2, List, User, MapPin, Trash2 } from "lucide-react";
 import { useAppointments, useCreateAppointment, useUpdateAppointment, useStaffProfiles, useServices } from "@/hooks/useAppointments";
-import { useAvailabilitySlots, useCreateAvailabilitySlotsBatch, useBookSlot, useFreeSlot, useUpdateAvailabilitySlot } from "@/hooks/useAvailability";
+import { useAvailabilitySlots, useCreateAvailabilitySlotsBatch, useBookSlot, useFreeSlot, useUpdateAvailabilitySlot, useDeleteAvailabilitySlot } from "@/hooks/useAvailability";
 import { useContacts } from "@/hooks/useContacts";
 import { useCenters } from "@/hooks/useCenters";
 import { useCenterFilter } from "@/components/layout/CenterSelector";
@@ -99,6 +99,7 @@ export default function AgendaPage() {
   const bookSlot = useBookSlot();
   const freeSlotMut = useFreeSlot();
   const updateSlot = useUpdateAvailabilitySlot();
+  const deleteSlot = useDeleteAvailabilitySlot();
   const updateApt = useUpdateAppointment();
 
   const isLoading = slotsLoading || aptsLoading;
@@ -173,6 +174,30 @@ export default function AgendaPage() {
     return result;
   };
 
+  // Check overlap against existing slots
+  const checkOverlap = (newSlots: any[]) => {
+    if (!slots) return [];
+    const overlapping: string[] = [];
+    for (const ns of newSlots) {
+      for (const existing of slots as any[]) {
+        if (existing.professional_id === ns.professional_id && existing.date === ns.date && existing.center_id === ns.center_id) {
+          if (ns.start_time < existing.end_time && ns.end_time > existing.start_time) {
+            overlapping.push(`${ns.date} ${ns.start_time}-${ns.end_time}`);
+            break;
+          }
+        }
+      }
+    }
+    return overlapping;
+  };
+
+  const handleDeleteSlot = async (slotId: string) => {
+    try {
+      await deleteSlot.mutateAsync(slotId);
+      toast.success("Hueco eliminado");
+    } catch (err: any) { toast.error(err.message); }
+  };
+
   const handleCreateSlots = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!slotForm.center_id || !slotForm.professional_id || !slotForm.date_from || !slotForm.date_to) {
@@ -181,6 +206,14 @@ export default function AgendaPage() {
     }
     const newSlots = generateSlots(slotForm);
     if (newSlots.length === 0) { toast.error("No se generaron huecos con estos parámetros"); return; }
+    
+    // Check for overlaps
+    const overlaps = checkOverlap(newSlots);
+    if (overlaps.length > 0) {
+      toast.error(`Hay ${overlaps.length} hueco(s) que solapan con disponibilidad existente. Ajusta las horas.`);
+      return;
+    }
+    
     try {
       await createSlotsBatch.mutateAsync(newSlots);
       toast.success(`${newSlots.length} huecos creados correctamente`);
@@ -196,6 +229,13 @@ export default function AgendaPage() {
     }
     const newSlots = generateSlots(demoForm);
     if (newSlots.length === 0) { toast.error("No se generaron huecos"); return; }
+    
+    const overlaps = checkOverlap(newSlots);
+    if (overlaps.length > 0) {
+      toast.error(`Hay ${overlaps.length} hueco(s) que solapan con disponibilidad existente`);
+      return;
+    }
+    
     try {
       await createSlotsBatch.mutateAsync(newSlots);
       toast.success(`Demo: ${newSlots.length} huecos ficticios generados`);
@@ -207,9 +247,23 @@ export default function AgendaPage() {
     e.preventDefault();
     if (!selectedSlot || !bookForm.contact_id) { toast.error("Selecciona un contacto"); return; }
     const dur = parseInt(bookForm.duration) || selectedSlot.duration_minutes;
-    const [sh, sm] = selectedSlot.start_time.split(":").map(Number);
     const startDt = new Date(`${selectedSlot.date}T${selectedSlot.start_time}:00`).toISOString();
     const endDt = new Date(new Date(`${selectedSlot.date}T${selectedSlot.start_time}:00`).getTime() + dur * 60000).toISOString();
+    
+    // Check for overlapping appointments for the same professional
+    if (selectedSlot.professional_id && appointments) {
+      const overlap = appointments.find((a: any) => 
+        a.professional_id === selectedSlot.professional_id &&
+        a.status !== "cancelada" &&
+        new Date(a.start_time) < new Date(endDt) &&
+        new Date(a.end_time) > new Date(startDt)
+      );
+      if (overlap) {
+        toast.error(`El profesional ya tiene una cita en ese horario (${format(new Date(overlap.start_time), "HH:mm")}–${format(new Date(overlap.end_time), "HH:mm")})`);
+        return;
+      }
+    }
+    
     try {
       await bookSlot.mutateAsync({
         slotId: selectedSlot.id,
@@ -399,18 +453,31 @@ export default function AgendaPage() {
                       </StatusBadge>
                     </td>
                     <td className="p-3">
-                      {slot.status === "disponible" ? (
-                        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => {
-                          setSelectedSlot(slot);
-                          setBookForm({ contact_id: "", duration: String(slot.duration_minutes), notes: "" });
-                          setBookOpen(true);
-                        }}>Reservar</Button>
-                      ) : slot.status === "ocupado" && slot.appointment_id ? (
-                        <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => {
-                          const apt = appointments?.find((a: any) => a.id === slot.appointment_id);
-                          if (apt) { setSelectedApt(apt); setSelectedSlot(slot); setDetailOpen(true); }
-                        }}>Ver cita</Button>
-                      ) : null}
+                      <div className="flex gap-1">
+                        {slot.status === "disponible" && (
+                          <>
+                            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => {
+                              setSelectedSlot(slot);
+                              setBookForm({ contact_id: "", duration: String(slot.duration_minutes), notes: "" });
+                              setBookOpen(true);
+                            }}>Reservar</Button>
+                            <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive" onClick={() => handleDeleteSlot(slot.id)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </>
+                        )}
+                        {slot.status === "ocupado" && slot.appointment_id && (
+                          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => {
+                            const apt = appointments?.find((a: any) => a.id === slot.appointment_id);
+                            if (apt) { setSelectedApt(apt); setSelectedSlot(slot); setDetailOpen(true); }
+                          }}>Ver cita</Button>
+                        )}
+                        {slot.status === "bloqueado" && (
+                          <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive" onClick={() => handleDeleteSlot(slot.id)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -452,13 +519,20 @@ export default function AgendaPage() {
                               return (
                                 <div
                                   key={slot.id}
-                                  className={`rounded-md border p-1.5 cursor-pointer transition-colors ${slotStatusColors.disponible}`}
+                                  className={`rounded-md border p-1.5 cursor-pointer transition-colors relative group ${slotStatusColors.disponible}`}
                                   onClick={() => {
                                     setSelectedSlot(slot);
                                     setBookForm({ contact_id: "", duration: String(slot.duration_minutes), notes: "" });
                                     setBookOpen(true);
                                   }}
                                 >
+                                  <button
+                                    className="absolute top-0.5 right-0.5 hidden group-hover:flex h-4 w-4 items-center justify-center rounded bg-destructive/80 text-white"
+                                    onClick={(e) => { e.stopPropagation(); handleDeleteSlot(slot.id); }}
+                                    title="Eliminar hueco"
+                                  >
+                                    <X className="h-2.5 w-2.5" />
+                                  </button>
                                   <div className="flex items-center gap-1">
                                     <Clock className="h-3 w-3 text-success" />
                                     <span className="text-[10px] font-medium text-success">Disponible</span>
@@ -493,7 +567,14 @@ export default function AgendaPage() {
                             }
                             if (slot.status === "bloqueado") {
                               return (
-                                <div key={slot.id} className={`rounded-md border p-1.5 ${slotStatusColors.bloqueado}`}>
+                                <div key={slot.id} className={`rounded-md border p-1.5 relative group ${slotStatusColors.bloqueado}`}>
+                                  <button
+                                    className="absolute top-0.5 right-0.5 hidden group-hover:flex h-4 w-4 items-center justify-center rounded bg-destructive/80 text-white"
+                                    onClick={(e) => { e.stopPropagation(); handleDeleteSlot(slot.id); }}
+                                    title="Eliminar hueco"
+                                  >
+                                    <X className="h-2.5 w-2.5" />
+                                  </button>
                                   <span className="text-[10px] text-muted-foreground">Bloqueado</span>
                                 </div>
                               );
