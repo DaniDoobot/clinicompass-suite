@@ -66,7 +66,8 @@ export default function QuotesPage() {
 
   const handleSave = async () => {
     if (!form.contact_id || !form.center_id) { toast.error("Selecciona contacto y centro"); return; }
-    if (lines.some(l => !l.description)) { toast.error("Completa todos los conceptos"); return; }
+    if (lines.some(l => !l.description.trim())) { toast.error("Completa todos los conceptos"); return; }
+    if (lines.some(l => l.quantity * l.unit_price === 0)) { toast.error("No se permiten líneas con importe 0 €"); return; }
 
     // Get fiscal data from contact
     const contact = contacts?.find((c: any) => c.id === form.contact_id);
