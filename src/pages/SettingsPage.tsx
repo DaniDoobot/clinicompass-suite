@@ -220,17 +220,35 @@ export default function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="roles">
-          <div className="stat-card max-w-2xl">
-            <h3 className="text-sm font-semibold font-heading text-foreground mb-4">Roles del sistema</h3>
-            <div className="space-y-2">
-              {ALL_ROLES.map((role) => (
-                <div key={role} className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
-                  <div className="flex items-center gap-3">
-                    <Shield className="h-4 w-4 text-primary" />
-                    <span className="text-sm font-medium">{ROLE_LABELS[role] || role}</span>
+          <div className="stat-card max-w-3xl">
+            <div className="mb-4">
+              <h3 className="text-sm font-semibold font-heading text-foreground mb-1">Roles y permisos del sistema</h3>
+              <p className="text-xs text-muted-foreground">
+                Los roles son fijos y controlan el acceso mediante políticas de seguridad en base de datos.
+                Para asignar o revocar roles a usuarios, usa la pestaña <strong>Equipo</strong>.
+              </p>
+            </div>
+            <div className="space-y-3">
+              {ALL_ROLES.map((role) => {
+                const members = staffList?.filter((s: any) => s.roles?.includes(role)) || [];
+                return (
+                  <div key={role} className="p-4 rounded-lg border bg-muted/20">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Shield className="h-4 w-4 text-primary" />
+                      <span className="text-sm font-semibold">{ROLE_LABELS[role] || role}</span>
+                      <Badge variant="outline" className="text-[10px] ml-auto">{members.length} usuario{members.length !== 1 ? "s" : ""}</Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-2">{ROLE_DESCRIPTIONS[role]}</p>
+                    {members.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {members.map((m: any) => (
+                          <Badge key={m.id} variant="secondary" className="text-[10px]">{m.first_name} {m.last_name}</Badge>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </TabsContent>
