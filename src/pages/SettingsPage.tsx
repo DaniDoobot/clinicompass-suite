@@ -468,9 +468,10 @@ export default function SettingsPage() {
                   <TableHead className="font-semibold">Nombre</TableHead>
                   <TableHead className="font-semibold">Email</TableHead>
                   <TableHead className="font-semibold">Centro</TableHead>
-                  <TableHead className="font-semibold">Roles</TableHead>
-                </TableRow>
-              </TableHeader>
+                   <TableHead className="font-semibold">Roles</TableHead>
+                   {isGerencia && <TableHead className="w-[60px]"></TableHead>}
+                 </TableRow>
+               </TableHeader>
               <TableBody>
                 {staffLoading ? (
                   <TableRow><TableCell colSpan={4} className="text-center py-4 text-muted-foreground">Cargando...</TableCell></TableRow>
