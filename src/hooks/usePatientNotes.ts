@@ -6,8 +6,8 @@ export function usePatientNote(patientId: string | undefined) {
     queryKey: ["patient-note", patientId],
     enabled: !!patientId,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("patient_notes" as any)
+      const { data, error } = await (supabase as any)
+        .from("patient_notes")
         .select("*")
         .eq("patient_id", patientId!)
         .maybeSingle();
@@ -22,13 +22,13 @@ export function usePatientNoteVersions(noteId: string | undefined) {
     queryKey: ["patient-note-versions", noteId],
     enabled: !!noteId,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("patient_note_versions" as any)
+      const { data, error } = await (supabase as any)
+        .from("patient_note_versions")
         .select("*")
         .eq("patient_note_id", noteId!)
         .order("version_number", { ascending: false });
       if (error) throw error;
-      return data as Array<{ id: string; patient_note_id: string; version_number: number; content: string; created_by: string | null; created_at: string }>;
+      return (data || []) as Array<{ id: string; patient_note_id: string; version_number: number; content: string; created_by: string | null; created_at: string }>;
     },
   });
 }
@@ -38,13 +38,13 @@ export function usePatientNoteAudios(noteId: string | undefined) {
     queryKey: ["patient-note-audios", noteId],
     enabled: !!noteId,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("patient_note_audios" as any)
+      const { data, error } = await (supabase as any)
+        .from("patient_note_audios")
         .select("*")
         .eq("patient_note_id", noteId!)
         .order("created_at", { ascending: false });
       if (error) throw error;
-      return data as Array<{
+      return (data || []) as Array<{
         id: string; patient_note_id: string; note_version_id: string | null;
         file_path: string; file_name: string | null; duration_seconds: number | null;
         transcription: string | null; created_by: string | null; created_at: string;
