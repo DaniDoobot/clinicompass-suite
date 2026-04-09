@@ -111,7 +111,8 @@ export default function SettingsPage() {
   const [creatingUser, setCreatingUser] = useState(false);
   const [editingStaff, setEditingStaff] = useState<any>(null);
   const [editRoles, setEditRoles] = useState<string[]>([]);
-  const [savingRoles, setSavingRoles] = useState(false);
+  const [editProfile, setEditProfile] = useState({ first_name: "", last_name: "", email: "", phone: "", center_id: "", specialty: "" });
+  const [savingEdit, setSavingEdit] = useState(false);
   const [userForm, setUserForm] = useState({
     email: "", password: "", first_name: "", last_name: "",
     center_id: "", specialty: "", roles: [] as string[],
@@ -223,16 +224,38 @@ export default function SettingsPage() {
     }
   };
 
-  const openEditRoles = (staff: any) => {
+  const openEditStaff = (staff: any) => {
     setEditingStaff(staff);
     setEditRoles(staff.roles || []);
+    setEditProfile({
+      first_name: staff.first_name || "",
+      last_name: staff.last_name || "",
+      email: staff.email || "",
+      phone: staff.phone || "",
+      center_id: staff.center_id || "",
+      specialty: staff.specialty || "",
+    });
   };
 
-  const handleSaveRoles = async () => {
+  const handleSaveEdit = async () => {
     if (!editingStaff) return;
-    setSavingRoles(true);
+    setSavingEdit(true);
     try {
-      // Get current roles to compute diff (avoid deleting all then inserting, which breaks RLS)
+      // 1. Update staff_profiles
+      const { error: profileError } = await supabase
+        .from("staff_profiles")
+        .update({
+          first_name: editProfile.first_name,
+          last_name: editProfile.last_name,
+          email: editProfile.email || null,
+          phone: editProfile.phone || null,
+          center_id: editProfile.center_id || null,
+          specialty: (editProfile.specialty || null) as any,
+        })
+        .eq("id", editingStaff.id);
+      if (profileError) throw profileError;
+
+      // 2. Update roles (differential)
       const { data: currentRoles } = await supabase
         .from("user_roles")
         .select("id, role")
@@ -242,25 +265,24 @@ export default function SettingsPage() {
       const toDelete = (currentRoles || []).filter(r => !editRoles.includes(r.role));
       const toAdd = editRoles.filter(r => !currentRoleNames.includes(r));
 
-      // Delete removed roles
       for (const r of toDelete) {
         const { error } = await supabase.from("user_roles").delete().eq("id", r.id);
         if (error) throw error;
       }
-      // Insert new roles
       if (toAdd.length > 0) {
         const { error } = await supabase.from("user_roles").insert(
           toAdd.map(role => ({ user_id: editingStaff.user_id, role: role as any }))
         );
         if (error) throw error;
       }
-      toast.success("Roles actualizados");
+
+      toast.success("Usuario actualizado");
       queryClient.invalidateQueries({ queryKey: ["staff-with-roles"] });
       setEditingStaff(null);
     } catch (e: any) {
-      toast.error(e.message || "Error al actualizar roles");
+      toast.error(e.message || "Error al actualizar");
     } finally {
-      setSavingRoles(false);
+      setSavingEdit(false);
     }
   };
 
@@ -645,7 +667,7 @@ export default function SettingsPage() {
                     </TableCell>
                     {isGerencia && (
                       <TableCell>
-                        <button className="p-1.5 rounded-md hover:bg-muted transition-colors" onClick={() => openEditRoles(s)}>
+                        <button className="p-1.5 rounded-md hover:bg-muted transition-colors" onClick={() => openEditStaff(s)}>
                           <Pencil className="h-4 w-4 text-muted-foreground" />
                         </button>
                       </TableCell>
@@ -725,30 +747,73 @@ export default function SettingsPage() {
             </DialogContent>
           </Dialog>
 
-          {/* Edit roles dialog */}
+          {/* Edit staff dialog */}
           <Dialog open={!!editingStaff} onOpenChange={(open) => { if (!open) setEditingStaff(null); }}>
-            <DialogContent className="max-w-md">
+            <DialogContent className="max-w-lg">
               <DialogHeader>
-                <DialogTitle>Editar roles — {editingStaff?.first_name} {editingStaff?.last_name}</DialogTitle>
+                <DialogTitle>Editar usuario — {editingStaff?.first_name} {editingStaff?.last_name}</DialogTitle>
               </DialogHeader>
-              <div className="space-y-2">
-                <div className="grid grid-cols-2 gap-2">
-                  {ALL_ROLES.map((role) => (
-                    <label key={role} className="flex items-center gap-2 p-2 rounded-lg bg-muted/30 cursor-pointer hover:bg-muted/50 transition-colors">
-                      <Checkbox
-                        checked={editRoles.includes(role)}
-                        onCheckedChange={() => setEditRoles(prev => prev.includes(role) ? prev.filter(r => r !== role) : [...prev, role])}
-                      />
-                      <span className="text-sm">{ROLE_LABELS[role] || role}</span>
-                    </label>
-                  ))}
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Nombre</Label>
+                    <Input className="h-9" value={editProfile.first_name} onChange={e => setEditProfile({ ...editProfile, first_name: e.target.value })} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Apellido</Label>
+                    <Input className="h-9" value={editProfile.last_name} onChange={e => setEditProfile({ ...editProfile, last_name: e.target.value })} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Email</Label>
+                    <Input className="h-9" value={editProfile.email} onChange={e => setEditProfile({ ...editProfile, email: e.target.value })} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Teléfono</Label>
+                    <Input className="h-9" value={editProfile.phone} onChange={e => setEditProfile({ ...editProfile, phone: e.target.value })} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Centro</Label>
+                    <Select value={editProfile.center_id} onValueChange={v => setEditProfile({ ...editProfile, center_id: v })}>
+                      <SelectTrigger className="h-9"><SelectValue placeholder="Sin centro" /></SelectTrigger>
+                      <SelectContent>{centers?.map((c: any) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Especialidad</Label>
+                    <Select value={editProfile.specialty} onValueChange={v => setEditProfile({ ...editProfile, specialty: v })}>
+                      <SelectTrigger className="h-9"><SelectValue placeholder="Sin especialidad" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="fisioterapia">Fisioterapia</SelectItem>
+                        <SelectItem value="nutricion">Nutrición</SelectItem>
+                        <SelectItem value="psicotecnicos">Psicotécnicos</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-semibold">Roles</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {ALL_ROLES.map((role) => (
+                      <label key={role} className="flex items-center gap-2 p-2 rounded-lg bg-muted/30 cursor-pointer hover:bg-muted/50 transition-colors">
+                        <Checkbox
+                          checked={editRoles.includes(role)}
+                          onCheckedChange={() => setEditRoles(prev => prev.includes(role) ? prev.filter(r => r !== role) : [...prev, role])}
+                        />
+                        <span className="text-sm">{ROLE_LABELS[role] || role}</span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
               </div>
               <div className="flex justify-end gap-2 mt-2">
                 <Button variant="outline" onClick={() => setEditingStaff(null)}>Cancelar</Button>
-                <Button onClick={handleSaveRoles} disabled={savingRoles}>
-                  {savingRoles && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                  Guardar roles
+                <Button onClick={handleSaveEdit} disabled={savingEdit}>
+                  {savingEdit && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                  Guardar cambios
                 </Button>
               </div>
             </DialogContent>
