@@ -27,6 +27,7 @@ export default function ContactsPage({ filterCategory }: { filterCategory?: stri
   const [search, setSearch] = useState("");
   const [catFilter, setCatFilter] = useState(filterCategory || "all");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [audioContactId, setAudioContactId] = useState<string | null>(null);
   const navigate = useNavigate();
   const { selectedCenterId } = useCenterFilter();
 
