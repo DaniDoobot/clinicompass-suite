@@ -224,16 +224,38 @@ export default function SettingsPage() {
     }
   };
 
-  const openEditRoles = (staff: any) => {
+  const openEditStaff = (staff: any) => {
     setEditingStaff(staff);
     setEditRoles(staff.roles || []);
+    setEditProfile({
+      first_name: staff.first_name || "",
+      last_name: staff.last_name || "",
+      email: staff.email || "",
+      phone: staff.phone || "",
+      center_id: staff.center_id || "",
+      specialty: staff.specialty || "",
+    });
   };
 
-  const handleSaveRoles = async () => {
+  const handleSaveEdit = async () => {
     if (!editingStaff) return;
-    setSavingRoles(true);
+    setSavingEdit(true);
     try {
-      // Get current roles to compute diff (avoid deleting all then inserting, which breaks RLS)
+      // 1. Update staff_profiles
+      const { error: profileError } = await supabase
+        .from("staff_profiles")
+        .update({
+          first_name: editProfile.first_name,
+          last_name: editProfile.last_name,
+          email: editProfile.email || null,
+          phone: editProfile.phone || null,
+          center_id: editProfile.center_id || null,
+          specialty: editProfile.specialty || null,
+        })
+        .eq("id", editingStaff.id);
+      if (profileError) throw profileError;
+
+      // 2. Update roles (differential)
       const { data: currentRoles } = await supabase
         .from("user_roles")
         .select("id, role")
@@ -243,25 +265,24 @@ export default function SettingsPage() {
       const toDelete = (currentRoles || []).filter(r => !editRoles.includes(r.role));
       const toAdd = editRoles.filter(r => !currentRoleNames.includes(r));
 
-      // Delete removed roles
       for (const r of toDelete) {
         const { error } = await supabase.from("user_roles").delete().eq("id", r.id);
         if (error) throw error;
       }
-      // Insert new roles
       if (toAdd.length > 0) {
         const { error } = await supabase.from("user_roles").insert(
           toAdd.map(role => ({ user_id: editingStaff.user_id, role: role as any }))
         );
         if (error) throw error;
       }
-      toast.success("Roles actualizados");
+
+      toast.success("Usuario actualizado");
       queryClient.invalidateQueries({ queryKey: ["staff-with-roles"] });
       setEditingStaff(null);
     } catch (e: any) {
-      toast.error(e.message || "Error al actualizar roles");
+      toast.error(e.message || "Error al actualizar");
     } finally {
-      setSavingRoles(false);
+      setSavingEdit(false);
     }
   };
 
