@@ -260,50 +260,69 @@ export default function ContactDetailPage() {
           <PatientNotesSection contactId={contact.id} />
         </TabsContent>
 
+        <TabsContent value="sessions">
+          <SessionNotesSection contactId={contact.id} />
+        </TabsContent>
+
         <TabsContent value="info">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <div className="stat-card lg:col-span-2">
-              <h3 className="text-sm font-semibold font-heading text-foreground mb-4">Datos personales</h3>
-              <div className="grid grid-cols-2 gap-4">
-                {([
-                  ["NIF/DNI", contact.nif],
-                  ["Fecha nacimiento", contact.birth_date ? format(new Date(contact.birth_date), "dd/MM/yyyy") : "-"],
-                  ["Sexo", contact.sex || "-"],
-                  ["Teléfono", contact.phone || "-"],
-                  ["Email", contact.email || "-"],
-                  ["Dirección", [contact.address, contact.city, contact.postal_code].filter(Boolean).join(", ") || "-"],
-                  ["Centro", (contact as any).center?.name || "-"],
-                  ["Profesional", profName],
-                  ["Canal captación", contact.source || "-"],
-                ] as [string, string | null][]).map(([label, value]) => (
-                  <div key={label}>
-                    <p className="text-xs text-muted-foreground">{label}</p>
-                    <p className="text-sm font-medium text-foreground mt-0.5">{value || "-"}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="space-y-4">
-              {activePack && (
-                <div className="stat-card">
-                  <h3 className="text-sm font-semibold font-heading text-foreground mb-3">Bono activo</h3>
-                  <p className="text-xs text-muted-foreground mb-2">{(activePack as any).name}</p>
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-                      <div className="h-full bg-primary rounded-full" style={{ width: `${((activePack as any).used_sessions / (activePack as any).total_sessions) * 100}%` }} />
+          <div className="space-y-4">
+            <VoiceEditSection
+              contactId={contact.id}
+              currentData={{
+                first_name: contact.first_name, last_name: contact.last_name,
+                nif: contact.nif, birth_date: contact.birth_date, sex: contact.sex,
+                phone: contact.phone, email: contact.email,
+                address: contact.address, city: contact.city, postal_code: contact.postal_code,
+                notes: contact.notes, source: contact.source, company_name: contact.company_name,
+                fiscal_name: contact.fiscal_name, fiscal_nif: contact.fiscal_nif,
+                fiscal_address: contact.fiscal_address, fiscal_email: contact.fiscal_email,
+                fiscal_phone: contact.fiscal_phone,
+              }}
+            />
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="stat-card lg:col-span-2">
+                <h3 className="text-sm font-semibold font-heading text-foreground mb-4">Datos personales</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  {([
+                    ["NIF/DNI", contact.nif],
+                    ["Fecha nacimiento", contact.birth_date ? format(new Date(contact.birth_date), "dd/MM/yyyy") : "-"],
+                    ["Sexo", contact.sex || "-"],
+                    ["Teléfono", contact.phone || "-"],
+                    ["Email", contact.email || "-"],
+                    ["Dirección", [contact.address, contact.city, contact.postal_code].filter(Boolean).join(", ") || "-"],
+                    ["Centro", (contact as any).center?.name || "-"],
+                    ["Profesional", profName],
+                    ["Canal captación", contact.source || "-"],
+                  ] as [string, string | null][]).map(([label, value]) => (
+                    <div key={label}>
+                      <p className="text-xs text-muted-foreground">{label}</p>
+                      <p className="text-sm font-medium text-foreground mt-0.5">{value || "-"}</p>
                     </div>
-                    <span className="text-sm font-semibold text-foreground">{(activePack as any).used_sessions}/{(activePack as any).total_sessions}</span>
-                  </div>
+                  ))}
                 </div>
-              )}
-              <div className="stat-card">
-                <h3 className="text-sm font-semibold font-heading text-foreground mb-3">Observaciones</h3>
-                <Textarea
-                  className="text-xs min-h-[80px]"
-                  defaultValue={contact.notes || ""}
-                  placeholder="Añadir observaciones internas..."
-                  onBlur={(e) => updateContact.mutateAsync({ id: contact.id, notes: e.target.value || null })}
-                />
+              </div>
+              <div className="space-y-4">
+                {activePack && (
+                  <div className="stat-card">
+                    <h3 className="text-sm font-semibold font-heading text-foreground mb-3">Bono activo</h3>
+                    <p className="text-xs text-muted-foreground mb-2">{(activePack as any).name}</p>
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                        <div className="h-full bg-primary rounded-full" style={{ width: `${((activePack as any).used_sessions / (activePack as any).total_sessions) * 100}%` }} />
+                      </div>
+                      <span className="text-sm font-semibold text-foreground">{(activePack as any).used_sessions}/{(activePack as any).total_sessions}</span>
+                    </div>
+                  </div>
+                )}
+                <div className="stat-card">
+                  <h3 className="text-sm font-semibold font-heading text-foreground mb-3">Observaciones</h3>
+                  <Textarea
+                    className="text-xs min-h-[80px]"
+                    defaultValue={contact.notes || ""}
+                    placeholder="Añadir observaciones internas..."
+                    onBlur={(e) => updateContact.mutateAsync({ id: contact.id, notes: e.target.value || null })}
+                  />
+                </div>
               </div>
             </div>
           </div>
