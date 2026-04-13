@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Mic, Square, Loader2, CheckCircle2, AlertCircle, History, Play, Pause } from "lucide-react";
 import { useVoiceEdit } from "@/hooks/useVoiceEdit";
