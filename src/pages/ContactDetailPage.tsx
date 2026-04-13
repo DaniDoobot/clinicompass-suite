@@ -8,8 +8,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { ArrowLeft, Phone, Mail, MapPin, Calendar, FileText, Edit, Plus, Loader2, Tag, Briefcase, Stethoscope } from "lucide-react";
+import { ArrowLeft, Phone, Mail, MapPin, Calendar, FileText, Edit, Plus, Loader2, Tag, Briefcase, Stethoscope, BookOpen } from "lucide-react";
 import { PatientNotesSection } from "@/components/patient/PatientNotesSection";
+import { VoiceEditSection } from "@/components/patient/VoiceEditSection";
+import { SessionNotesSection } from "@/components/patient/SessionNotesSection";
 import { useNavigate, useParams } from "react-router-dom";
 import { useContact, useContactAppointments, useContactDocuments, useContactInteractions, useContactPacks, useContactCategories, useUpdateContact } from "@/hooks/useContacts";
 import { useContactBusinesses } from "@/hooks/useBusinesses";
@@ -246,6 +248,7 @@ export default function ContactDetailPage() {
         <TabsList>
           <TabsTrigger value="info">Información</TabsTrigger>
           <TabsTrigger value="notes"><Stethoscope className="h-3.5 w-3.5 mr-1" />Notas</TabsTrigger>
+          <TabsTrigger value="sessions"><BookOpen className="h-3.5 w-3.5 mr-1" />Sesiones</TabsTrigger>
           <TabsTrigger value="businesses">Negocios ({businesses?.length || 0})</TabsTrigger>
           <TabsTrigger value="appointments">Citas ({appointments?.length || 0})</TabsTrigger>
           <TabsTrigger value="interactions">Interacciones ({interactions?.length || 0})</TabsTrigger>
@@ -257,50 +260,69 @@ export default function ContactDetailPage() {
           <PatientNotesSection contactId={contact.id} />
         </TabsContent>
 
+        <TabsContent value="sessions">
+          <SessionNotesSection contactId={contact.id} />
+        </TabsContent>
+
         <TabsContent value="info">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <div className="stat-card lg:col-span-2">
-              <h3 className="text-sm font-semibold font-heading text-foreground mb-4">Datos personales</h3>
-              <div className="grid grid-cols-2 gap-4">
-                {([
-                  ["NIF/DNI", contact.nif],
-                  ["Fecha nacimiento", contact.birth_date ? format(new Date(contact.birth_date), "dd/MM/yyyy") : "-"],
-                  ["Sexo", contact.sex || "-"],
-                  ["Teléfono", contact.phone || "-"],
-                  ["Email", contact.email || "-"],
-                  ["Dirección", [contact.address, contact.city, contact.postal_code].filter(Boolean).join(", ") || "-"],
-                  ["Centro", (contact as any).center?.name || "-"],
-                  ["Profesional", profName],
-                  ["Canal captación", contact.source || "-"],
-                ] as [string, string | null][]).map(([label, value]) => (
-                  <div key={label}>
-                    <p className="text-xs text-muted-foreground">{label}</p>
-                    <p className="text-sm font-medium text-foreground mt-0.5">{value || "-"}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="space-y-4">
-              {activePack && (
-                <div className="stat-card">
-                  <h3 className="text-sm font-semibold font-heading text-foreground mb-3">Bono activo</h3>
-                  <p className="text-xs text-muted-foreground mb-2">{(activePack as any).name}</p>
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-                      <div className="h-full bg-primary rounded-full" style={{ width: `${((activePack as any).used_sessions / (activePack as any).total_sessions) * 100}%` }} />
+          <div className="space-y-4">
+            <VoiceEditSection
+              contactId={contact.id}
+              currentData={{
+                first_name: contact.first_name, last_name: contact.last_name,
+                nif: contact.nif, birth_date: contact.birth_date, sex: contact.sex,
+                phone: contact.phone, email: contact.email,
+                address: contact.address, city: contact.city, postal_code: contact.postal_code,
+                notes: contact.notes, source: contact.source, company_name: contact.company_name,
+                fiscal_name: contact.fiscal_name, fiscal_nif: contact.fiscal_nif,
+                fiscal_address: contact.fiscal_address, fiscal_email: contact.fiscal_email,
+                fiscal_phone: contact.fiscal_phone,
+              }}
+            />
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="stat-card lg:col-span-2">
+                <h3 className="text-sm font-semibold font-heading text-foreground mb-4">Datos personales</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  {([
+                    ["NIF/DNI", contact.nif],
+                    ["Fecha nacimiento", contact.birth_date ? format(new Date(contact.birth_date), "dd/MM/yyyy") : "-"],
+                    ["Sexo", contact.sex || "-"],
+                    ["Teléfono", contact.phone || "-"],
+                    ["Email", contact.email || "-"],
+                    ["Dirección", [contact.address, contact.city, contact.postal_code].filter(Boolean).join(", ") || "-"],
+                    ["Centro", (contact as any).center?.name || "-"],
+                    ["Profesional", profName],
+                    ["Canal captación", contact.source || "-"],
+                  ] as [string, string | null][]).map(([label, value]) => (
+                    <div key={label}>
+                      <p className="text-xs text-muted-foreground">{label}</p>
+                      <p className="text-sm font-medium text-foreground mt-0.5">{value || "-"}</p>
                     </div>
-                    <span className="text-sm font-semibold text-foreground">{(activePack as any).used_sessions}/{(activePack as any).total_sessions}</span>
-                  </div>
+                  ))}
                 </div>
-              )}
-              <div className="stat-card">
-                <h3 className="text-sm font-semibold font-heading text-foreground mb-3">Observaciones</h3>
-                <Textarea
-                  className="text-xs min-h-[80px]"
-                  defaultValue={contact.notes || ""}
-                  placeholder="Añadir observaciones internas..."
-                  onBlur={(e) => updateContact.mutateAsync({ id: contact.id, notes: e.target.value || null })}
-                />
+              </div>
+              <div className="space-y-4">
+                {activePack && (
+                  <div className="stat-card">
+                    <h3 className="text-sm font-semibold font-heading text-foreground mb-3">Bono activo</h3>
+                    <p className="text-xs text-muted-foreground mb-2">{(activePack as any).name}</p>
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                        <div className="h-full bg-primary rounded-full" style={{ width: `${((activePack as any).used_sessions / (activePack as any).total_sessions) * 100}%` }} />
+                      </div>
+                      <span className="text-sm font-semibold text-foreground">{(activePack as any).used_sessions}/{(activePack as any).total_sessions}</span>
+                    </div>
+                  </div>
+                )}
+                <div className="stat-card">
+                  <h3 className="text-sm font-semibold font-heading text-foreground mb-3">Observaciones</h3>
+                  <Textarea
+                    className="text-xs min-h-[80px]"
+                    defaultValue={contact.notes || ""}
+                    placeholder="Añadir observaciones internas..."
+                    onBlur={(e) => updateContact.mutateAsync({ id: contact.id, notes: e.target.value || null })}
+                  />
+                </div>
               </div>
             </div>
           </div>
