@@ -8,8 +8,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { ArrowLeft, Phone, Mail, MapPin, Calendar, FileText, Edit, Plus, Loader2, Tag, Briefcase, Stethoscope } from "lucide-react";
+import { ArrowLeft, Phone, Mail, MapPin, Calendar, FileText, Edit, Plus, Loader2, Tag, Briefcase, Stethoscope, BookOpen } from "lucide-react";
 import { PatientNotesSection } from "@/components/patient/PatientNotesSection";
+import { VoiceEditSection } from "@/components/patient/VoiceEditSection";
+import { SessionNotesSection } from "@/components/patient/SessionNotesSection";
 import { useNavigate, useParams } from "react-router-dom";
 import { useContact, useContactAppointments, useContactDocuments, useContactInteractions, useContactPacks, useContactCategories, useUpdateContact } from "@/hooks/useContacts";
 import { useContactBusinesses } from "@/hooks/useBusinesses";
@@ -246,6 +248,7 @@ export default function ContactDetailPage() {
         <TabsList>
           <TabsTrigger value="info">Información</TabsTrigger>
           <TabsTrigger value="notes"><Stethoscope className="h-3.5 w-3.5 mr-1" />Notas</TabsTrigger>
+          <TabsTrigger value="sessions"><BookOpen className="h-3.5 w-3.5 mr-1" />Sesiones</TabsTrigger>
           <TabsTrigger value="businesses">Negocios ({businesses?.length || 0})</TabsTrigger>
           <TabsTrigger value="appointments">Citas ({appointments?.length || 0})</TabsTrigger>
           <TabsTrigger value="interactions">Interacciones ({interactions?.length || 0})</TabsTrigger>
