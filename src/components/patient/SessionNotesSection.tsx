@@ -1,11 +1,13 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Mic, Square, Loader2, Plus, FileText, CheckCircle2 } from "lucide-react";
+import { Mic, Square, Loader2, Plus, FileText, CheckCircle2, Play, Pause } from "lucide-react";
 import { useVoiceEdit } from "@/hooks/useVoiceEdit";
+import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
+import { supabase } from "@/integrations/supabase/client";
 
 interface Props {
   entityType: "patient" | "contact";
@@ -14,10 +16,10 @@ interface Props {
 
 export function SessionNotesSection({ entityType, entityId }: Props) {
   const { sessionMutation, sessionNotes, synopsis, isLoadingNotes, isLoadingSynopsis } = useVoiceEdit(entityType, entityId);
+  const audioRecorder = useAudioRecorder({ entityType, entityId, folder: "session-notes" });
   const [manualContent, setManualContent] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState<"idle" | "recording" | "processing">("idle");
-  const mediaRecorder = useRef<MediaRecorder | null>(null);
 
   const handleManualSave = async () => {
     if (!manualContent.trim()) return;
@@ -32,44 +34,32 @@ export function SessionNotesSection({ entityType, entityId }: Props) {
   };
 
   const startVoiceSession = useCallback(async () => {
+    setVoiceStatus("recording");
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
-      const chunks: Blob[] = [];
-      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
-      recorder.onstop = async () => {
-        stream.getTracks().forEach(t => t.stop());
-        setVoiceStatus("processing");
-        try {
-          const transcription = await transcribeWithSpeechAPI();
-          if (!transcription) {
-            toast.error("No se pudo transcribir el audio");
-            setVoiceStatus("idle");
-            return;
-          }
-          await sessionMutation.mutateAsync({
-            content: transcription,
-            source: "voice",
-            transcription,
-          });
-          toast.success("Sesión por voz registrada y sinopsis actualizada");
-          setVoiceStatus("idle");
-        } catch (err: any) {
-          toast.error(err.message || "Error al procesar");
-          setVoiceStatus("idle");
-        }
-      };
-      recorder.start();
-      mediaRecorder.current = recorder;
-      setVoiceStatus("recording");
-    } catch {
-      toast.error("No se pudo acceder al micrófono");
+      const result = await audioRecorder.startRecording();
+      setVoiceStatus("processing");
+      if (!result.transcription) {
+        toast.error("No se pudo transcribir el audio");
+        setVoiceStatus("idle");
+        return;
+      }
+      await sessionMutation.mutateAsync({
+        content: result.transcription,
+        source: "voice",
+        transcription: result.transcription,
+        audioFilePath: result.audioFilePath,
+      });
+      toast.success("Sesión por voz registrada y sinopsis actualizada");
+      setVoiceStatus("idle");
+    } catch (err: any) {
+      toast.error(err.message || "Error al procesar");
+      setVoiceStatus("idle");
     }
-  }, [sessionMutation]);
+  }, [audioRecorder, sessionMutation]);
 
   const stopVoiceSession = useCallback(() => {
-    mediaRecorder.current?.stop();
-  }, []);
+    audioRecorder.stopRecording();
+  }, [audioRecorder]);
 
   return (
     <div className="space-y-4">
@@ -146,9 +136,12 @@ export function SessionNotesSection({ entityType, entityId }: Props) {
                   <span className="text-[10px] font-medium text-muted-foreground">
                     {format(new Date(note.created_at), "dd/MM/yyyy HH:mm", { locale: es })}
                   </span>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${note.source === "voice" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
-                    {note.source === "voice" ? "🎤 Voz" : "✍️ Manual"}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {note.audio_file_path && <AudioPlayer filePath={note.audio_file_path} />}
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${note.source === "voice" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
+                      {note.source === "voice" ? "🎤 Voz" : "✍️ Manual"}
+                    </span>
+                  </div>
                 </div>
                 <p className="text-sm text-foreground whitespace-pre-line">{note.content}</p>
                 {note.transcription && note.source === "voice" && (
@@ -163,26 +156,37 @@ export function SessionNotesSection({ entityType, entityId }: Props) {
   );
 }
 
-function transcribeWithSpeechAPI(): Promise<string | null> {
-  return new Promise((resolve) => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) { resolve(null); return; }
-    const recognition = new SpeechRecognition();
-    recognition.lang = "es-ES";
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-    recognition.continuous = true;
-    let finalTranscript = "";
-    recognition.onresult = (event: any) => {
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        if (event.results[i].isFinal) {
-          finalTranscript += event.results[i][0].transcript + " ";
-        }
+function AudioPlayer({ filePath }: { filePath: string }) {
+  const [playing, setPlaying] = useState(false);
+  const [audio, setAudio] = useState<HTMLAudioElement | null>(null);
+
+  const handlePlay = async () => {
+    if (playing && audio) {
+      audio.pause();
+      setPlaying(false);
+      return;
+    }
+
+    if (!audio) {
+      const { data } = await supabase.storage
+        .from("patient-audios")
+        .createSignedUrl(filePath, 3600);
+      if (data?.signedUrl) {
+        const a = new Audio(data.signedUrl);
+        a.onended = () => setPlaying(false);
+        setAudio(a);
+        a.play();
+        setPlaying(true);
       }
-    };
-    recognition.onerror = () => resolve(finalTranscript.trim() || null);
-    recognition.onend = () => resolve(finalTranscript.trim() || null);
-    recognition.start();
-    setTimeout(() => { try { recognition.stop(); } catch {} }, 60000);
-  });
+    } else {
+      audio.play();
+      setPlaying(true);
+    }
+  };
+
+  return (
+    <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={handlePlay} title="Reproducir audio">
+      {playing ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
+    </Button>
+  );
 }
