@@ -245,9 +245,10 @@ export default function ContactDetailPage() {
       </div>
 
       <Tabs defaultValue="info" className="space-y-4">
-        <TabsList>
+        <TabsList className="flex-wrap">
           <TabsTrigger value="info">Información</TabsTrigger>
           <TabsTrigger value="notes"><Stethoscope className="h-3.5 w-3.5 mr-1" />Notas</TabsTrigger>
+          <TabsTrigger value="sessions">Sesiones</TabsTrigger>
           <TabsTrigger value="businesses">Negocios ({businesses?.length || 0})</TabsTrigger>
           <TabsTrigger value="appointments">Citas ({appointments?.length || 0})</TabsTrigger>
           <TabsTrigger value="interactions">Interacciones ({interactions?.length || 0})</TabsTrigger>
@@ -257,6 +258,10 @@ export default function ContactDetailPage() {
 
         <TabsContent value="notes">
           <PatientNotesSection contactId={contact.id} />
+        </TabsContent>
+
+        <TabsContent value="sessions">
+          <SessionNotesSection entityType="contact" entityId={contact.id} />
         </TabsContent>
 
         <TabsContent value="info">
