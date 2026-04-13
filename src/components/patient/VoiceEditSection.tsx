@@ -1,7 +1,8 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { Mic, Square, Loader2, CheckCircle2, AlertCircle, History } from "lucide-react";
+import { Mic, Square, Loader2, CheckCircle2, AlertCircle, History, Play, Pause } from "lucide-react";
 import { useVoiceEdit } from "@/hooks/useVoiceEdit";
+import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -15,56 +16,45 @@ interface Props {
 
 export function VoiceEditSection({ entityType, entityId }: Props) {
   const { editMutation, voiceEdits, isLoadingEdits } = useVoiceEdit(entityType, entityId);
+  const audioRecorder = useAudioRecorder({ entityType, entityId, folder: "voice-edits" });
   const [status, setStatus] = useState<Status>("idle");
   const [lastResult, setLastResult] = useState<any>(null);
   const [showHistory, setShowHistory] = useState(false);
-  const mediaRecorder = useRef<MediaRecorder | null>(null);
-  const chunks = useRef<Blob[]>([]);
 
   const startRecording = useCallback(async () => {
+    setLastResult(null);
+    setStatus("recording");
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
-      chunks.current = [];
-      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.current.push(e.data); };
-      recorder.onstop = async () => {
-        stream.getTracks().forEach(t => t.stop());
-        setStatus("processing");
-        try {
-          // For now, we use the Web Speech API for transcription
-          const transcription = await transcribeWithSpeechAPI();
-          if (!transcription) {
-            setStatus("error");
-            toast.error("No se pudo transcribir el audio. Intenta de nuevo.");
-            return;
-          }
-          const result = await editMutation.mutateAsync(transcription);
-          setLastResult(result);
-          setStatus("done");
-          if (result.changes?.length > 0) {
-            toast.success(`${result.changes.length} campo(s) actualizado(s)`);
-          } else {
-            toast.info("No se detectaron cambios en la instrucción");
-          }
-          setTimeout(() => setStatus("idle"), 5000);
-        } catch (err: any) {
-          setStatus("error");
-          toast.error(err.message || "Error al procesar");
-          setTimeout(() => setStatus("idle"), 4000);
-        }
-      };
-      recorder.start();
-      mediaRecorder.current = recorder;
-      setStatus("recording");
-      setLastResult(null);
-    } catch {
-      toast.error("No se pudo acceder al micrófono");
+      const result = await audioRecorder.startRecording();
+      // This resolves when stopRecording is called
+      setStatus("processing");
+      if (!result.transcription) {
+        setStatus("error");
+        toast.error("No se pudo transcribir el audio. Intenta de nuevo.");
+        return;
+      }
+      const editResult = await editMutation.mutateAsync({
+        transcription: result.transcription,
+        audioFilePath: result.audioFilePath,
+      });
+      setLastResult(editResult);
+      setStatus("done");
+      if (editResult.changes?.length > 0) {
+        toast.success(`${editResult.changes.length} campo(s) actualizado(s)`);
+      } else {
+        toast.info("No se detectaron cambios en la instrucción");
+      }
+      setTimeout(() => setStatus("idle"), 5000);
+    } catch (err: any) {
+      setStatus("error");
+      toast.error(err.message || "Error al procesar");
+      setTimeout(() => setStatus("idle"), 4000);
     }
-  }, [editMutation]);
+  }, [audioRecorder, editMutation]);
 
   const stopRecording = useCallback(() => {
-    mediaRecorder.current?.stop();
-  }, []);
+    audioRecorder.stopRecording();
+  }, [audioRecorder]);
 
   return (
     <div className="stat-card">
@@ -142,6 +132,7 @@ export function VoiceEditSection({ entityType, entityId }: Props) {
                   <span className="text-[10px] text-muted-foreground">
                     {format(new Date(edit.created_at), "dd/MM/yyyy HH:mm", { locale: es })}
                   </span>
+                  {edit.audio_file_path && <AudioPlayer filePath={edit.audio_file_path} />}
                 </div>
                 {edit.transcription && (
                   <p className="text-xs italic text-muted-foreground">"{edit.transcription}"</p>
@@ -168,27 +159,38 @@ export function VoiceEditSection({ entityType, entityId }: Props) {
   );
 }
 
-// Simple Web Speech API transcription
-function transcribeWithSpeechAPI(): Promise<string | null> {
-  return new Promise((resolve) => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      resolve(null);
+function AudioPlayer({ filePath }: { filePath: string }) {
+  const [playing, setPlaying] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const handlePlay = async () => {
+    if (playing && audioRef.current) {
+      audioRef.current.pause();
+      setPlaying(false);
       return;
     }
-    const recognition = new SpeechRecognition();
-    recognition.lang = "es-ES";
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-    recognition.onresult = (event: any) => {
-      resolve(event.results[0]?.[0]?.transcript || null);
-    };
-    recognition.onerror = () => resolve(null);
-    recognition.onend = () => {}; // handled by onresult
-    recognition.start();
-    // Auto-stop after 15 seconds
-    setTimeout(() => {
-      try { recognition.stop(); } catch {}
-    }, 15000);
-  });
+
+    if (!audioRef.current) {
+      const { supabase } = await import("@/integrations/supabase/client");
+      const { data } = await supabase.storage
+        .from("patient-audios")
+        .createSignedUrl(filePath, 3600);
+      if (data?.signedUrl) {
+        const audio = new Audio(data.signedUrl);
+        audio.onended = () => setPlaying(false);
+        audioRef.current = audio;
+        audio.play();
+        setPlaying(true);
+      }
+    } else {
+      audioRef.current.play();
+      setPlaying(true);
+    }
+  };
+
+  return (
+    <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={handlePlay} title="Reproducir audio">
+      {playing ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
+    </Button>
+  );
 }
