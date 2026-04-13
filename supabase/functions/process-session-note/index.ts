@@ -1,170 +1,79 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) throw new Error("No authorization header");
+    if (!authHeader) throw new Error("No auth header");
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const lovableKey = Deno.env.get("LOVABLE_API_KEY");
-    if (!lovableKey) throw new Error("LOVABLE_API_KEY not configured");
+    const supabaseKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const lovableKey = Deno.env.get("LOVABLE_API_KEY")!;
 
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const userClient = createClient(supabaseUrl, anonKey, {
+    const supabaseAuth = createClient(supabaseUrl, supabaseKey, {
       global: { headers: { Authorization: authHeader } },
     });
-    const { data: { user }, error: authErr } = await userClient.auth.getUser();
+    const { data: { user }, error: authErr } = await supabaseAuth.auth.getUser();
     if (authErr || !user) throw new Error("Unauthorized");
 
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
-    const { patient_id, contact_id, content, audio_base64, source } = await req.json();
-    const entityId = patient_id || contact_id;
-    if (!entityId) throw new Error("patient_id or contact_id is required");
-    if (!content && !audio_base64) throw new Error("content or audio_base64 is required");
-
-    const { data: staffProfile } = await supabase
+    const supabaseAdmin = createClient(supabaseUrl, serviceKey);
+    const { data: staffProfile } = await supabaseAdmin
       .from("staff_profiles")
-      .select("id")
+      .select("id, first_name, last_name")
       .eq("user_id", user.id)
-      .maybeSingle();
-    const createdBy = staffProfile?.id || null;
+      .single();
 
-    let sessionContent = content || "";
-    let transcription: string | null = null;
-    let audioPath: string | null = null;
-
-    // If voice: transcribe and optionally structure
-    if (audio_base64) {
-      // Upload audio
-      const audioBytes = Uint8Array.from(atob(audio_base64), (c) => c.charCodeAt(0));
-      audioPath = `sessions/${entityId}/${Date.now()}.webm`;
-      const { error: uploadErr } = await supabase.storage
-        .from("patient-audios")
-        .upload(audioPath, audioBytes, { contentType: "audio/webm", upsert: false });
-      if (uploadErr) throw new Error(`Upload failed: ${uploadErr.message}`);
-
-      // Transcribe
-      const tResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${lovableKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "google/gemini-2.5-flash",
-          messages: [
-            {
-              role: "system",
-              content: "Eres un transcriptor médico profesional. Transcribe el audio de forma precisa en español. Solo devuelve la transcripción.",
-            },
-            {
-              role: "user",
-              content: [
-                { type: "text", text: "Transcribe este audio:" },
-                { type: "input_audio", input_audio: { data: audio_base64, format: "wav" } },
-              ],
-            },
-          ],
-        }),
-      });
-
-      if (tResp.ok) {
-        const td = await tResp.json();
-        transcription = td.choices?.[0]?.message?.content || "";
-      }
-      if (!transcription) throw new Error("No se pudo transcribir el audio");
-
-      // Structure the transcription
-      const structResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${lovableKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "google/gemini-2.5-flash",
-          messages: [
-            {
-              role: "system",
-              content: `Eres un asistente clínico. Limpia y estructura la transcripción de una sesión clínica.
-REGLAS:
-- Elimina muletillas y lenguaje coloquial
-- Mantén tono profesional y clínico
-- Preserva toda la información relevante
-- Organiza en párrafos claros
-- NO inventes información
-- Devuelve solo el contenido limpio`,
-            },
-            {
-              role: "user",
-              content: `Transcripción de la sesión:\n${transcription}\n\nDevuelve la versión limpia y estructurada:`,
-            },
-          ],
-        }),
-      });
-
-      if (structResp.ok) {
-        const sd = await structResp.json();
-        sessionContent = sd.choices?.[0]?.message?.content || transcription;
-      } else {
-        sessionContent = transcription;
-      }
+    const { content, entity_type, entity_id, source, transcription } = await req.json();
+    if (!content || !entity_type || !entity_id) {
+      throw new Error("Missing content, entity_type, or entity_id");
     }
 
     // Save session note
-    const { data: sessionNote, error: insertErr } = await supabase
-      .from("patient_session_notes")
-      .insert({
-        patient_id: patient_id || null,
-        contact_id: contact_id || null,
-        content: sessionContent,
-        source: source || (audio_base64 ? "voz" : "manual"),
-        audio_file_path: audioPath,
-        transcription,
-        created_by: createdBy,
-      })
-      .select()
-      .single();
-    if (insertErr) throw new Error(`Error al guardar sesión: ${insertErr.message}`);
+    const noteInsert: Record<string, any> = {
+      content,
+      source: source || "manual",
+      created_by: staffProfile?.id || null,
+      transcription: transcription || null,
+    };
+    if (entity_type === "patient") noteInsert.patient_id = entity_id;
+    else noteInsert.contact_id = entity_id;
 
-    // Update synopsis
-    // Get current synopsis
-    const entityField = patient_id ? "patient_id" : "contact_id";
-    let { data: synopsis } = await supabase
+    const { error: noteErr } = await supabaseAdmin
+      .from("patient_session_notes")
+      .insert(noteInsert);
+    if (noteErr) throw new Error(`Error saving session note: ${noteErr.message}`);
+
+    // Fetch current synopsis
+    const idCol = entity_type === "patient" ? "patient_id" : "contact_id";
+    const { data: existingSynopsis } = await supabaseAdmin
       .from("patient_synopsis")
       .select("*")
-      .eq(entityField, entityId)
+      .eq(idCol, entity_id)
       .maybeSingle();
 
-    const currentSynopsis = synopsis?.content || "";
-
-    // Get recent sessions for context (last 5)
-    const { data: recentSessions } = await supabase
+    // Fetch recent session notes for context (last 10)
+    const { data: recentNotes } = await supabaseAdmin
       .from("patient_session_notes")
-      .select("content, created_at")
-      .eq(entityField, entityId)
+      .select("content, created_at, source")
+      .eq(idCol, entity_id)
       .order("created_at", { ascending: false })
-      .limit(5);
+      .limit(10);
 
-    const sessionsContext = (recentSessions || [])
-      .map((s: any) => `[${s.created_at}] ${s.content}`)
-      .join("\n\n");
+    const notesContext = (recentNotes || [])
+      .reverse()
+      .map((n: any) => `[${new Date(n.created_at).toLocaleDateString("es-ES")}] ${n.content}`)
+      .join("\n");
 
-    // Generate new synopsis
-    const synResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    // Generate updated synopsis via AI
+    const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${lovableKey}`,
@@ -175,70 +84,59 @@ REGLAS:
         messages: [
           {
             role: "system",
-            content: `Eres un asistente clínico. Genera una sinopsis global del estado del paciente.
-
-REGLAS:
-- Máximo 5-10 líneas
-- Sintetiza SOLO lo más importante y reciente
-- Prioriza información clínicamente relevante
-- Omite detalles antiguos si ya no son relevantes
-- Mantén tono profesional y conciso
-- NO uses títulos ni formato markdown
-- Escribe en párrafos cortos o puntos clave
-- Si hay evolución, destaca el progreso
-- Devuelve SOLO la sinopsis`,
+            content: `Eres un asistente clínico. Genera una sinopsis breve (5-10 líneas máximo) del estado del paciente basándote en el historial de sesiones. La sinopsis debe:
+- Ser muy concisa y útil para consulta rápida
+- Priorizar información reciente y clínicamente relevante
+- Omitir detalles antiguos poco relevantes
+- No crecer indefinidamente; mantener brevedad
+- Estar en español
+- No incluir encabezados ni formato markdown`,
           },
           {
             role: "user",
-            content: `SINOPSIS ACTUAL:
-${currentSynopsis || "(Sin sinopsis previa)"}
-
-ÚLTIMAS SESIONES:
-${sessionsContext}
-
-NUEVA SESIÓN AÑADIDA:
-${sessionContent}
-
-Genera la sinopsis actualizada:`,
+            content: `Sinopsis actual:\n${existingSynopsis?.content || "(ninguna)"}\n\nHistorial de sesiones recientes:\n${notesContext}\n\nNueva sesión añadida:\n${content}\n\nGenera la sinopsis actualizada:`,
           },
         ],
       }),
     });
 
-    let newSynopsis = currentSynopsis;
-    if (synResp.ok) {
-      const synData = await synResp.json();
-      newSynopsis = synData.choices?.[0]?.message?.content || currentSynopsis;
+    if (!aiResponse.ok) {
+      console.error("AI synopsis error:", await aiResponse.text());
+      // Session saved but synopsis not updated - acceptable graceful degradation
+      return new Response(JSON.stringify({ success: true, synopsis_updated: false }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
-    // Upsert synopsis
-    if (synopsis) {
-      await supabase
-        .from("patient_synopsis")
-        .update({ content: newSynopsis, updated_by: createdBy })
-        .eq("id", synopsis.id);
-    } else {
-      const insertData: any = { content: newSynopsis, updated_by: createdBy };
-      if (patient_id) insertData.patient_id = patient_id;
-      if (contact_id) insertData.contact_id = contact_id;
-      await supabase.from("patient_synopsis").insert(insertData);
+    const aiData = await aiResponse.json();
+    const newSynopsis = aiData.choices?.[0]?.message?.content?.trim() || "";
+
+    if (newSynopsis) {
+      if (existingSynopsis) {
+        await supabaseAdmin
+          .from("patient_synopsis")
+          .update({ content: newSynopsis, updated_by: staffProfile?.id || null })
+          .eq("id", existingSynopsis.id);
+      } else {
+        const synInsert: Record<string, any> = {
+          content: newSynopsis,
+          updated_by: staffProfile?.id || null,
+        };
+        if (entity_type === "patient") synInsert.patient_id = entity_id;
+        else synInsert.contact_id = entity_id;
+        await supabaseAdmin.from("patient_synopsis").insert(synInsert);
+      }
     }
 
-    return new Response(
-      JSON.stringify({
-        success: true,
-        session_note: sessionNote,
-        synopsis: newSynopsis,
-        transcription,
-      }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return new Response(JSON.stringify({ success: true, synopsis_updated: true, synopsis: newSynopsis }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+
   } catch (e) {
     console.error("process-session-note error:", e);
-    const status = (e as Error).message === "Unauthorized" ? 401 : 500;
-    return new Response(
-      JSON.stringify({ error: (e as Error).message }),
-      { status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 });

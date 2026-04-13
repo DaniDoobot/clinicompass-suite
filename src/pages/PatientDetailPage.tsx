@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { ArrowLeft, Phone, Mail, MapPin, Calendar, FileText, MessageSquare, Edit, Plus, Loader2, Upload, Tag, User, Stethoscope, BookOpen } from "lucide-react";
+import { ArrowLeft, Phone, Mail, MapPin, Calendar, FileText, MessageSquare, Edit, Plus, Loader2, Upload, Tag, User, Stethoscope } from "lucide-react";
 import { PatientNotesSection } from "@/components/patient/PatientNotesSection";
 import { VoiceEditSection } from "@/components/patient/VoiceEditSection";
 import { SessionNotesSection } from "@/components/patient/SessionNotesSection";
@@ -227,7 +227,7 @@ export default function PatientDetailPage() {
         <TabsList className="flex-wrap">
           <TabsTrigger value="info">Información</TabsTrigger>
           <TabsTrigger value="notes"><Stethoscope className="h-3.5 w-3.5 mr-1" />Notas</TabsTrigger>
-          <TabsTrigger value="sessions"><BookOpen className="h-3.5 w-3.5 mr-1" />Sesiones</TabsTrigger>
+          <TabsTrigger value="sessions">Sesiones</TabsTrigger>
           <TabsTrigger value="appointments">Citas ({appointments?.length || 0})</TabsTrigger>
           <TabsTrigger value="interactions">Interacciones ({interactions?.length || 0})</TabsTrigger>
           <TabsTrigger value="documents">Documentos ({documents?.length || 0})</TabsTrigger>
@@ -236,19 +236,7 @@ export default function PatientDetailPage() {
 
         <TabsContent value="info">
           <div className="space-y-4">
-            <VoiceEditSection
-              patientId={patient.id}
-              currentData={{
-                first_name: patient.first_name, last_name: patient.last_name,
-                nif: patient.nif, birth_date: patient.birth_date, sex: patient.sex,
-                phone: patient.phone, email: patient.email,
-                address: patient.address, city: patient.city, postal_code: patient.postal_code,
-                notes: patient.notes, source: patient.source,
-                fiscal_name: patient.fiscal_name, fiscal_nif: patient.fiscal_nif,
-                fiscal_address: patient.fiscal_address, fiscal_email: patient.fiscal_email,
-                fiscal_phone: patient.fiscal_phone,
-              }}
-            />
+            <VoiceEditSection entityType="patient" entityId={patient.id} />
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               <div className="stat-card lg:col-span-2">
                 <h3 className="text-sm font-semibold font-heading text-foreground mb-4">Datos personales</h3>
@@ -308,7 +296,7 @@ export default function PatientDetailPage() {
         </TabsContent>
 
         <TabsContent value="sessions">
-          <SessionNotesSection patientId={patient.id} />
+          <SessionNotesSection entityType="patient" entityId={patient.id} />
         </TabsContent>
 
         <TabsContent value="appointments">

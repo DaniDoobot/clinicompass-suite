@@ -1,241 +1,194 @@
 import { useState, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { Mic, Square, Loader2, History, ChevronDown, ChevronUp, CheckCircle2, AlertCircle } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { useProcessVoiceEdit, useVoiceEdits } from "@/hooks/useVoiceEdit";
+import { Mic, Square, Loader2, CheckCircle2, AlertCircle, History } from "lucide-react";
+import { useVoiceEdit } from "@/hooks/useVoiceEdit";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
+type Status = "idle" | "recording" | "processing" | "done" | "error";
+
 interface Props {
-  patientId?: string;
-  contactId?: string;
-  currentData: Record<string, any>;
+  entityType: "patient" | "contact";
+  entityId: string;
 }
 
-type Step = "idle" | "recording" | "uploading" | "processing" | "done" | "error";
-
-const stepLabels: Record<Step, string> = {
-  idle: "",
-  recording: "Grabando instrucción...",
-  uploading: "Subiendo audio...",
-  processing: "IA interpretando cambios...",
-  done: "¡Cambios aplicados!",
-  error: "Error al procesar",
-};
-
-const fieldLabels: Record<string, string> = {
-  first_name: "Nombre",
-  last_name: "Apellidos",
-  nif: "NIF/DNI",
-  birth_date: "Fecha de nacimiento",
-  sex: "Sexo",
-  phone: "Teléfono",
-  email: "Email",
-  address: "Dirección",
-  city: "Ciudad",
-  postal_code: "Código postal",
-  notes: "Observaciones",
-  source: "Canal captación",
-  fiscal_name: "Nombre fiscal",
-  fiscal_nif: "NIF fiscal",
-  fiscal_address: "Dirección fiscal",
-  fiscal_email: "Email fiscal",
-  fiscal_phone: "Teléfono fiscal",
-  company_name: "Empresa",
-};
-
-export function VoiceEditSection({ patientId, contactId, currentData }: Props) {
-  const processVoiceEdit = useProcessVoiceEdit();
-  const { data: voiceEdits } = useVoiceEdits({ patientId, contactId });
-
-  const [step, setStep] = useState<Step>("idle");
-  const [lastResult, setLastResult] = useState<{
-    changes: Array<{ field: string; old_value?: string; new_value: string; reason: string }>;
-    interpretation: string;
-  } | null>(null);
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [expandedEdit, setExpandedEdit] = useState<string | null>(null);
-
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
+export function VoiceEditSection({ entityType, entityId }: Props) {
+  const { editMutation, voiceEdits, isLoadingEdits } = useVoiceEdit(entityType, entityId);
+  const [status, setStatus] = useState<Status>("idle");
+  const [lastResult, setLastResult] = useState<any>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const mediaRecorder = useRef<MediaRecorder | null>(null);
+  const chunks = useRef<Blob[]>([]);
 
   const startRecording = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm;codecs=opus" });
-      mediaRecorderRef.current = mediaRecorder;
-      chunksRef.current = [];
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
+      const recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
+      chunks.current = [];
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.current.push(e.data); };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        setStatus("processing");
+        try {
+          // For now, we use the Web Speech API for transcription
+          const transcription = await transcribeWithSpeechAPI();
+          if (!transcription) {
+            setStatus("error");
+            toast.error("No se pudo transcribir el audio. Intenta de nuevo.");
+            return;
+          }
+          const result = await editMutation.mutateAsync(transcription);
+          setLastResult(result);
+          setStatus("done");
+          if (result.changes?.length > 0) {
+            toast.success(`${result.changes.length} campo(s) actualizado(s)`);
+          } else {
+            toast.info("No se detectaron cambios en la instrucción");
+          }
+          setTimeout(() => setStatus("idle"), 5000);
+        } catch (err: any) {
+          setStatus("error");
+          toast.error(err.message || "Error al procesar");
+          setTimeout(() => setStatus("idle"), 4000);
+        }
       };
-      mediaRecorder.start(250);
-      setStep("recording");
+      recorder.start();
+      mediaRecorder.current = recorder;
+      setStatus("recording");
       setLastResult(null);
     } catch {
       toast.error("No se pudo acceder al micrófono");
     }
+  }, [editMutation]);
+
+  const stopRecording = useCallback(() => {
+    mediaRecorder.current?.stop();
   }, []);
-
-  const stopRecording = useCallback(async () => {
-    const mr = mediaRecorderRef.current;
-    if (!mr || mr.state === "inactive") return;
-
-    return new Promise<void>((resolve) => {
-      mr.onstop = async () => {
-        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
-        mr.stream.getTracks().forEach((t) => t.stop());
-
-        setStep("uploading");
-        try {
-          const reader = new FileReader();
-          const base64 = await new Promise<string>((res, rej) => {
-            reader.onload = () => res((reader.result as string).split(",")[1]);
-            reader.onerror = rej;
-            reader.readAsDataURL(blob);
-          });
-
-          setStep("processing");
-          const result = await processVoiceEdit.mutateAsync({
-            patientId,
-            contactId,
-            audioBase64: base64,
-            currentData,
-          });
-
-          setLastResult({ changes: result.changes, interpretation: result.interpretation });
-
-          if (result.changes.length > 0) {
-            setStep("done");
-            toast.success(`${result.changes.length} campo(s) actualizado(s)`);
-          } else {
-            setStep("done");
-            toast.info("No se identificaron cambios en la instrucción");
-          }
-          setTimeout(() => setStep("idle"), 4000);
-        } catch (err: any) {
-          setStep("error");
-          toast.error(err.message || "Error al procesar");
-          setTimeout(() => setStep("idle"), 3000);
-        }
-        resolve();
-      };
-      mr.stop();
-    });
-  }, [patientId, contactId, currentData, processVoiceEdit]);
-
-  const isRecording = step === "recording";
-  const isBusy = step !== "idle" && step !== "done" && step !== "error";
 
   return (
     <div className="stat-card">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold font-heading text-foreground">Editar ficha por voz</h3>
-        {voiceEdits && voiceEdits.length > 0 && (
-          <Button variant="ghost" size="sm" className="gap-1 text-xs" onClick={() => setHistoryOpen(true)}>
-            <History className="h-3.5 w-3.5" /> Historial ({voiceEdits.length})
-          </Button>
-        )}
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-semibold font-heading text-foreground flex items-center gap-2">
+          <Mic className="h-4 w-4 text-primary" />
+          Editar ficha por voz
+        </h3>
+        <Button variant="ghost" size="sm" className="text-xs gap-1" onClick={() => setShowHistory(!showHistory)}>
+          <History className="h-3.5 w-3.5" /> Historial
+        </Button>
       </div>
 
       <p className="text-xs text-muted-foreground mb-3">
-        Dicta instrucciones como: "cambia el apellido por García López" o "la fecha de nacimiento es 15 de marzo de 1990"
+        Dicta instrucciones como: "cambia el teléfono por 612345678" o "la fecha de nacimiento es el 15 de marzo de 1990"
       </p>
 
       <div className="flex items-center gap-3">
-        {isRecording ? (
-          <Button variant="destructive" size="sm" className="gap-2" onClick={stopRecording}>
-            <Square className="h-4 w-4" /> Detener grabación
-          </Button>
-        ) : (
-          <Button size="sm" className="gap-2" onClick={startRecording} disabled={isBusy}>
-            <Mic className="h-4 w-4" /> Dictar cambios
+        {status === "idle" && (
+          <Button onClick={startRecording} size="sm" className="gap-2">
+            <Mic className="h-4 w-4" /> Grabar instrucción
           </Button>
         )}
-
-        {step !== "idle" && (
-          <div className="flex items-center gap-2 text-sm">
-            {isBusy && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
-            {isRecording && <span className="h-2 w-2 rounded-full bg-destructive animate-pulse" />}
-            {step === "done" && <CheckCircle2 className="h-4 w-4 text-green-600" />}
-            {step === "error" && <AlertCircle className="h-4 w-4 text-destructive" />}
-            <span className={step === "error" ? "text-destructive" : step === "done" ? "text-green-600" : "text-muted-foreground"}>
-              {stepLabels[step]}
-            </span>
+        {status === "recording" && (
+          <Button onClick={stopRecording} variant="destructive" size="sm" className="gap-2 animate-pulse">
+            <Square className="h-4 w-4" /> Detener grabación
+          </Button>
+        )}
+        {status === "processing" && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" /> Procesando instrucción...
+          </div>
+        )}
+        {status === "done" && lastResult && (
+          <div className="flex items-center gap-2 text-sm text-green-600">
+            <CheckCircle2 className="h-4 w-4" />
+            {lastResult.changes?.length > 0
+              ? `Actualizado: ${lastResult.changes.map((c: any) => c.label || c.field).join(", ")}`
+              : "Sin cambios detectados"}
+          </div>
+        )}
+        {status === "error" && (
+          <div className="flex items-center gap-2 text-sm text-destructive">
+            <AlertCircle className="h-4 w-4" /> Error al procesar
           </div>
         )}
       </div>
 
-      {/* Last result feedback */}
-      {lastResult && lastResult.changes.length > 0 && (
-        <div className="mt-3 p-3 rounded-lg bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800">
-          <p className="text-xs font-semibold text-green-800 dark:text-green-300 mb-2">Cambios aplicados:</p>
-          <div className="space-y-1">
-            {lastResult.changes.map((c, i) => (
-              <div key={i} className="text-xs text-green-700 dark:text-green-400">
-                <span className="font-medium">{fieldLabels[c.field] || c.field}:</span>{" "}
-                {c.old_value && <span className="line-through text-muted-foreground mr-1">{c.old_value}</span>}
-                → <span className="font-semibold">{c.new_value}</span>
-              </div>
-            ))}
-          </div>
+      {/* Change details */}
+      {lastResult?.changes?.length > 0 && (
+        <div className="mt-3 rounded-lg bg-muted/50 p-3 space-y-1.5">
+          <p className="text-xs font-medium text-foreground">Cambios aplicados:</p>
+          {lastResult.changes.map((c: any, i: number) => (
+            <div key={i} className="text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">{c.label || c.field}:</span>{" "}
+              <span className="line-through">{c.old_value || "(vacío)"}</span> → <span className="text-primary font-medium">{c.new_value}</span>
+              {c.reason && <span className="italic ml-1">({c.reason})</span>}
+            </div>
+          ))}
         </div>
       )}
 
-      {/* History dialog */}
-      <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="font-heading">Historial de ediciones por voz</DialogTitle>
-            <DialogDescription>Registro de todos los cambios realizados por voz</DialogDescription>
-          </DialogHeader>
-          {!voiceEdits?.length ? (
-            <p className="text-sm text-muted-foreground text-center py-8">Sin ediciones registradas</p>
+      {/* History */}
+      {showHistory && (
+        <div className="mt-4 space-y-2 border-t pt-3">
+          <p className="text-xs font-semibold text-foreground">Historial de ediciones por voz</p>
+          {isLoadingEdits ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : !voiceEdits?.length ? (
+            <p className="text-xs text-muted-foreground">Sin ediciones registradas</p>
           ) : (
-            <div className="space-y-2">
-              {voiceEdits.map((e) => (
-                <div key={e.id} className="border rounded-lg p-3">
-                  <div
-                    className="flex items-center justify-between cursor-pointer"
-                    onClick={() => setExpandedEdit(expandedEdit === e.id ? null : e.id)}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground">
-                        {format(new Date(e.created_at), "dd/MM/yyyy HH:mm", { locale: es })}
-                      </span>
-                      <span className="text-xs font-medium text-primary">
-                        {(e.fields_changed as any[])?.length || 0} campo(s)
-                      </span>
-                    </div>
-                    {expandedEdit === e.id ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                  </div>
-                  {expandedEdit === e.id && (
-                    <div className="mt-2 space-y-2">
-                      {e.transcription && (
-                        <div className="p-2 bg-muted/50 rounded">
-                          <p className="text-[10px] font-semibold text-muted-foreground mb-1">Instrucción:</p>
-                          <p className="text-xs">{e.transcription}</p>
-                        </div>
-                      )}
-                      {e.interpreted_instruction && (
-                        <p className="text-xs text-muted-foreground italic">{e.interpreted_instruction}</p>
-                      )}
-                      {(e.fields_changed as any[])?.map((c: any, i: number) => (
-                        <div key={i} className="text-xs">
-                          <span className="font-medium">{fieldLabels[c.field] || c.field}:</span>{" "}
-                          {c.old_value && <span className="line-through text-muted-foreground mr-1">{c.old_value}</span>}
-                          → <span className="font-semibold">{c.new_value}</span>
-                          {c.reason && <span className="text-muted-foreground ml-1">({c.reason})</span>}
-                        </div>
-                      ))}
-                    </div>
-                  )}
+            voiceEdits.map((edit: any) => (
+              <div key={edit.id} className="rounded-lg bg-muted/30 p-2.5 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-muted-foreground">
+                    {format(new Date(edit.created_at), "dd/MM/yyyy HH:mm", { locale: es })}
+                  </span>
                 </div>
-              ))}
-            </div>
+                {edit.transcription && (
+                  <p className="text-xs italic text-muted-foreground">"{edit.transcription}"</p>
+                )}
+                {edit.interpreted_instruction && (
+                  <p className="text-xs text-foreground">{edit.interpreted_instruction}</p>
+                )}
+                {Array.isArray(edit.fields_changed) && edit.fields_changed.length > 0 && (
+                  <div className="text-xs text-muted-foreground space-y-0.5">
+                    {(edit.fields_changed as any[]).map((c, j) => (
+                      <div key={j}>
+                        <span className="font-medium">{c.label || c.field}:</span>{" "}
+                        {c.old_value ?? "(vacío)"} → {c.new_value}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))
           )}
-        </DialogContent>
-      </Dialog>
+        </div>
+      )}
     </div>
   );
+}
+
+// Simple Web Speech API transcription
+function transcribeWithSpeechAPI(): Promise<string | null> {
+  return new Promise((resolve) => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      resolve(null);
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.lang = "es-ES";
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.onresult = (event: any) => {
+      resolve(event.results[0]?.[0]?.transcript || null);
+    };
+    recognition.onerror = () => resolve(null);
+    recognition.onend = () => {}; // handled by onresult
+    recognition.start();
+    // Auto-stop after 15 seconds
+    setTimeout(() => {
+      try { recognition.stop(); } catch {}
+    }, 15000);
+  });
 }

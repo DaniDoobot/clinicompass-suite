@@ -1,115 +1,80 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) throw new Error("No authorization header");
+    if (!authHeader) throw new Error("No auth header");
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const lovableKey = Deno.env.get("LOVABLE_API_KEY");
-    if (!lovableKey) throw new Error("LOVABLE_API_KEY not configured");
+    const supabaseKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const lovableKey = Deno.env.get("LOVABLE_API_KEY")!;
 
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const userClient = createClient(supabaseUrl, anonKey, {
+    // Auth check
+    const supabaseAuth = createClient(supabaseUrl, supabaseKey, {
       global: { headers: { Authorization: authHeader } },
     });
-    const { data: { user }, error: authErr } = await userClient.auth.getUser();
+    const { data: { user }, error: authErr } = await supabaseAuth.auth.getUser();
     if (authErr || !user) throw new Error("Unauthorized");
 
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
-    const { patient_id, contact_id, audio_base64, current_data } = await req.json();
-    const entityId = patient_id || contact_id;
-    const entityType = patient_id ? "patient" : "contact";
-    if (!entityId) throw new Error("patient_id or contact_id is required");
-    if (!audio_base64) throw new Error("audio_base64 is required");
-
-    const { data: staffProfile } = await supabase
+    // Get staff profile
+    const supabaseAdmin = createClient(supabaseUrl, serviceKey);
+    const { data: staffProfile } = await supabaseAdmin
       .from("staff_profiles")
       .select("id")
       .eq("user_id", user.id)
-      .maybeSingle();
-    const createdBy = staffProfile?.id || null;
+      .single();
 
-    // 1. Upload audio
-    const audioBytes = Uint8Array.from(atob(audio_base64), (c) => c.charCodeAt(0));
-    const filePath = `voice-edits/${entityId}/${Date.now()}.webm`;
-    const { error: uploadErr } = await supabase.storage
-      .from("patient-audios")
-      .upload(filePath, audioBytes, { contentType: "audio/webm", upsert: false });
-    if (uploadErr) throw new Error(`Upload failed: ${uploadErr.message}`);
-
-    // 2. Transcribe
-    const transcriptionResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${lovableKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          {
-            role: "system",
-            content: "Eres un transcriptor profesional. Transcribe el audio del usuario de forma precisa en español. Solo devuelve la transcripción.",
-          },
-          {
-            role: "user",
-            content: [
-              { type: "text", text: "Transcribe este audio:" },
-              { type: "input_audio", input_audio: { data: audio_base64, format: "wav" } },
-            ],
-          },
-        ],
-      }),
-    });
-
-    let transcription = "";
-    if (transcriptionResp.ok) {
-      const td = await transcriptionResp.json();
-      transcription = td.choices?.[0]?.message?.content || "";
+    const { transcription, entity_type, entity_id } = await req.json();
+    if (!transcription || !entity_type || !entity_id) {
+      throw new Error("Missing transcription, entity_type, or entity_id");
     }
-    if (!transcription) throw new Error("No se pudo transcribir el audio");
 
-    // 3. Use AI to interpret which fields to change
-    const fieldDescriptions = `
-Campos editables de la ficha del ${entityType === "patient" ? "paciente" : "contacto"}:
-- first_name: nombre
-- last_name: apellidos
-- nif: NIF/DNI
-- birth_date: fecha de nacimiento (formato YYYY-MM-DD)
-- sex: sexo (hombre/mujer)
-- phone: teléfono
-- email: email
-- address: dirección
-- city: ciudad
-- postal_code: código postal
-- center_id: centro (necesita UUID, no disponible por voz)
-- notes: observaciones generales
-- source: canal de captación
-- fiscal_name: nombre fiscal
-- fiscal_nif: NIF fiscal
-- fiscal_address: dirección fiscal
-- fiscal_email: email fiscal
-- fiscal_phone: teléfono fiscal
-${entityType === "contact" ? "- company_name: nombre de empresa" : ""}
-`;
+    const table = entity_type === "patient" ? "patients" : "contacts";
 
-    const currentDataStr = JSON.stringify(current_data || {}, null, 2);
+    // Fetch current record
+    const { data: currentRecord, error: fetchErr } = await supabaseAdmin
+      .from(table)
+      .select("*")
+      .eq("id", entity_id)
+      .single();
+    if (fetchErr) throw new Error(`Record not found: ${fetchErr.message}`);
 
-    const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    // Build field map for LLM
+    const editableFields: Record<string, string> = {
+      first_name: "Nombre",
+      last_name: "Apellido(s)",
+      nif: "NIF/DNI",
+      birth_date: "Fecha de nacimiento (formato YYYY-MM-DD)",
+      sex: "Sexo (hombre/mujer)",
+      phone: "Teléfono",
+      email: "Email",
+      address: "Dirección",
+      city: "Ciudad",
+      postal_code: "Código postal",
+      notes: "Observaciones/notas",
+      source: "Canal de captación",
+      fiscal_name: "Nombre fiscal",
+      fiscal_nif: "NIF fiscal",
+      fiscal_address: "Dirección fiscal",
+      fiscal_email: "Email fiscal",
+      fiscal_phone: "Teléfono fiscal",
+    };
+
+    const currentValues = Object.entries(editableFields).map(
+      ([key, label]) => `- ${label} (${key}): ${currentRecord[key] ?? "(vacío)"}`
+    ).join("\n");
+
+    // Call LLM with tool calling
+    const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${lovableKey}`,
@@ -120,36 +85,27 @@ ${entityType === "contact" ? "- company_name: nombre de empresa" : ""}
         messages: [
           {
             role: "system",
-            content: `Eres un asistente de CRM sanitario. Tu tarea es interpretar instrucciones de voz del usuario para modificar campos de la ficha de un ${entityType === "patient" ? "paciente" : "contacto"}.
+            content: `Eres un asistente de CRM sanitario. El usuario dicta instrucciones en español para modificar la ficha de un paciente/contacto. Debes interpretar la instrucción y devolver los campos que deben modificarse usando la función update_fields.
 
-${fieldDescriptions}
-
-DATOS ACTUALES DE LA FICHA:
-${currentDataStr}
-
-REGLAS:
-- Interpreta la instrucción de forma inteligente
-- Para fechas, convierte a formato YYYY-MM-DD
-- Para sexo, normaliza a "hombre" o "mujer"
-- Si el usuario dice "segundo apellido", modifica last_name añadiendo/cambiando el segundo apellido
-- Si el usuario dice "apellido", modifica last_name completo
-- Resuelve ambigüedades razonables
-- NO inventes datos que no estén en la instrucción
-- Ignora campos que no puedas resolver (como center_id por UUID)`,
+Reglas:
+- Solo modifica campos que el usuario mencione explícitamente o implícitamente.
+- Para fechas, usa formato YYYY-MM-DD.
+- Para sexo, usa "hombre" o "mujer".
+- Si el usuario dice "segundo apellido", modifica last_name añadiendo o cambiando la segunda palabra.
+- Resuelve ambigüedades razonables por ti mismo.
+- Si no puedes determinar un cambio con seguridad, no lo incluyas.`,
           },
           {
             role: "user",
-            content: `Instrucción del usuario: "${transcription}"
-
-Devuelve los cambios a aplicar.`,
+            content: `Ficha actual del paciente:\n${currentValues}\n\nInstrucción del usuario: "${transcription}"`,
           },
         ],
         tools: [
           {
             type: "function",
             function: {
-              name: "apply_changes",
-              description: "Aplica los cambios identificados a la ficha del paciente/contacto",
+              name: "update_fields",
+              description: "Actualiza los campos de la ficha del paciente/contacto según la instrucción del usuario.",
               parameters: {
                 type: "object",
                 properties: {
@@ -159,111 +115,96 @@ Devuelve los cambios a aplicar.`,
                       type: "object",
                       properties: {
                         field: { type: "string", description: "Nombre del campo a modificar" },
-                        old_value: { type: "string", description: "Valor anterior del campo" },
-                        new_value: { type: "string", description: "Nuevo valor a establecer" },
-                        reason: { type: "string", description: "Razón del cambio según la instrucción" },
+                        new_value: { type: "string", description: "Nuevo valor para el campo" },
+                        reason: { type: "string", description: "Explicación breve del cambio" },
                       },
                       required: ["field", "new_value", "reason"],
                     },
                   },
-                  interpretation: { type: "string", description: "Resumen de lo que se ha interpretado de la instrucción" },
+                  interpretation: { type: "string", description: "Resumen de lo que se interpretó de la instrucción" },
                 },
                 required: ["changes", "interpretation"],
               },
             },
           },
         ],
-        tool_choice: { type: "function", function: { name: "apply_changes" } },
+        tool_choice: { type: "function", function: { name: "update_fields" } },
       }),
     });
 
-    if (!aiResp.ok) {
-      const errText = await aiResp.text();
-      console.error("AI error:", errText);
+    if (!aiResponse.ok) {
+      const errText = await aiResponse.text();
+      console.error("AI error:", aiResponse.status, errText);
       throw new Error("Error al procesar la instrucción con IA");
     }
 
-    const aiData = await aiResp.json();
+    const aiData = await aiResponse.json();
     const toolCall = aiData.choices?.[0]?.message?.tool_calls?.[0];
     if (!toolCall) throw new Error("La IA no pudo interpretar la instrucción");
 
     const parsed = JSON.parse(toolCall.function.arguments);
-    const changes: Array<{ field: string; old_value?: string; new_value: string; reason: string }> = parsed.changes || [];
-    const interpretation: string = parsed.interpretation || "";
+    const { changes, interpretation } = parsed;
 
-    if (changes.length === 0) {
-      // Save audit even if no changes
-      await supabase.from("patient_voice_edits").insert({
-        patient_id: patient_id || null,
-        contact_id: contact_id || null,
-        audio_file_path: filePath,
-        transcription,
-        interpreted_instruction: interpretation || "No se identificaron cambios",
-        fields_changed: [],
-        created_by: createdBy,
-      });
-
-      return new Response(
-        JSON.stringify({ success: true, changes: [], interpretation, transcription }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    if (!changes || changes.length === 0) {
+      return new Response(JSON.stringify({
+        success: true,
+        changes: [],
+        interpretation: interpretation || "No se detectaron cambios",
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // 4. Build update object
-    const validFields = [
-      "first_name", "last_name", "nif", "birth_date", "sex", "phone", "email",
-      "address", "city", "postal_code", "notes", "source",
-      "fiscal_name", "fiscal_nif", "fiscal_address", "fiscal_email", "fiscal_phone",
-      "company_name",
-    ];
-
+    // Build update object and fields_changed log
     const updateObj: Record<string, any> = {};
-    const appliedChanges: typeof changes = [];
+    const fieldsChanged: any[] = [];
 
     for (const change of changes) {
-      if (validFields.includes(change.field)) {
-        updateObj[change.field] = change.new_value || null;
-        change.old_value = current_data?.[change.field] ?? null;
-        appliedChanges.push(change);
-      }
+      if (!(change.field in editableFields)) continue;
+      const oldValue = currentRecord[change.field];
+      updateObj[change.field] = change.new_value === "" ? null : change.new_value;
+      fieldsChanged.push({
+        field: change.field,
+        label: editableFields[change.field],
+        old_value: oldValue ?? null,
+        new_value: change.new_value,
+        reason: change.reason,
+      });
     }
 
-    // 5. Apply changes to DB
-    if (Object.keys(updateObj).length > 0) {
-      const table = entityType === "patient" ? "patients" : "contacts";
-      const { error: updateErr } = await supabase
-        .from(table)
-        .update(updateObj)
-        .eq("id", entityId);
-      if (updateErr) throw new Error(`Error al actualizar: ${updateErr.message}`);
+    if (Object.keys(updateObj).length === 0) {
+      return new Response(JSON.stringify({
+        success: true,
+        changes: [],
+        interpretation,
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // 6. Save audit trail
-    await supabase.from("patient_voice_edits").insert({
-      patient_id: patient_id || null,
-      contact_id: contact_id || null,
-      audio_file_path: filePath,
+    // Apply changes
+    const { error: updateErr } = await supabaseAdmin
+      .from(table)
+      .update(updateObj)
+      .eq("id", entity_id);
+    if (updateErr) throw new Error(`Error actualizando: ${updateErr.message}`);
+
+    // Save traceability
+    await supabaseAdmin.from("patient_voice_edits").insert({
+      [entity_type === "patient" ? "patient_id" : "contact_id"]: entity_id,
+      created_by: staffProfile?.id || null,
       transcription,
       interpreted_instruction: interpretation,
-      fields_changed: appliedChanges,
-      created_by: createdBy,
+      fields_changed: fieldsChanged,
     });
 
-    return new Response(
-      JSON.stringify({
-        success: true,
-        changes: appliedChanges,
-        interpretation,
-        transcription,
-      }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return new Response(JSON.stringify({
+      success: true,
+      changes: fieldsChanged,
+      interpretation,
+    }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+
   } catch (e) {
     console.error("process-voice-edit error:", e);
-    const status = (e as Error).message === "Unauthorized" ? 401 : 500;
-    return new Response(
-      JSON.stringify({ error: (e as Error).message }),
-      { status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 });
