@@ -235,54 +235,57 @@ export default function PatientDetailPage() {
         </TabsList>
 
         <TabsContent value="info">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <div className="stat-card lg:col-span-2">
-              <h3 className="text-sm font-semibold font-heading text-foreground mb-4">Datos personales</h3>
-              <div className="grid grid-cols-2 gap-4">
-                {([
-                  ["NIF/DNI", patient.nif],
-                  ["Fecha nacimiento", patient.birth_date ? format(new Date(patient.birth_date), "dd/MM/yyyy") : "-"],
-                  ["Sexo", patient.sex || "-"],
-                  ["Teléfono", patient.phone || "-"],
-                  ["Email", patient.email || "-"],
-                  ["Dirección", [patient.address, patient.city, patient.postal_code].filter(Boolean).join(", ") || "-"],
-                  ["Centro", (patient as any).center?.name || "-"],
-                  ["Profesional", profName],
-                  ["Canal captación", patient.source || "-"],
-                  ["Origen lead", patient.source_lead_id ? "Convertido desde lead" : "Alta directa"],
-                ] as [string, string | null][]).map(([label, value]) => (
-                  <div key={label}>
-                    <p className="text-xs text-muted-foreground">{label}</p>
-                    <p className="text-sm font-medium text-foreground mt-0.5">{value || "-"}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="space-y-4">
-              {activePack && (
-                <div className="stat-card">
-                  <h3 className="text-sm font-semibold font-heading text-foreground mb-3">Bono activo</h3>
-                  <p className="text-xs text-muted-foreground mb-2">{activePack.name}</p>
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-                      <div className="h-full bg-primary rounded-full" style={{ width: `${(activePack.used_sessions / activePack.total_sessions) * 100}%` }} />
+          <div className="space-y-4">
+            <VoiceEditSection entityType="patient" entityId={patient.id} />
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="stat-card lg:col-span-2">
+                <h3 className="text-sm font-semibold font-heading text-foreground mb-4">Datos personales</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  {([
+                    ["NIF/DNI", patient.nif],
+                    ["Fecha nacimiento", patient.birth_date ? format(new Date(patient.birth_date), "dd/MM/yyyy") : "-"],
+                    ["Sexo", patient.sex || "-"],
+                    ["Teléfono", patient.phone || "-"],
+                    ["Email", patient.email || "-"],
+                    ["Dirección", [patient.address, patient.city, patient.postal_code].filter(Boolean).join(", ") || "-"],
+                    ["Centro", (patient as any).center?.name || "-"],
+                    ["Profesional", profName],
+                    ["Canal captación", patient.source || "-"],
+                    ["Origen lead", patient.source_lead_id ? "Convertido desde lead" : "Alta directa"],
+                  ] as [string, string | null][]).map(([label, value]) => (
+                    <div key={label}>
+                      <p className="text-xs text-muted-foreground">{label}</p>
+                      <p className="text-sm font-medium text-foreground mt-0.5">{value || "-"}</p>
                     </div>
-                    <span className="text-sm font-semibold text-foreground">{activePack.used_sessions}/{activePack.total_sessions}</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {activePack.total_sessions - activePack.used_sessions} sesiones restantes
-                    {activePack.expiry_date && ` · Vence ${format(new Date(activePack.expiry_date), "dd/MM/yyyy")}`}
-                  </p>
+                  ))}
                 </div>
-              )}
-              <div className="stat-card">
-                <h3 className="text-sm font-semibold font-heading text-foreground mb-3">Observaciones</h3>
-                <Textarea
-                  className="text-xs min-h-[80px]"
-                  defaultValue={patient.notes || ""}
-                  placeholder="Añadir observaciones internas..."
-                  onBlur={(e) => updatePatient.mutateAsync({ id: patient.id, notes: e.target.value || null })}
-                />
+              </div>
+              <div className="space-y-4">
+                {activePack && (
+                  <div className="stat-card">
+                    <h3 className="text-sm font-semibold font-heading text-foreground mb-3">Bono activo</h3>
+                    <p className="text-xs text-muted-foreground mb-2">{activePack.name}</p>
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                        <div className="h-full bg-primary rounded-full" style={{ width: `${(activePack.used_sessions / activePack.total_sessions) * 100}%` }} />
+                      </div>
+                      <span className="text-sm font-semibold text-foreground">{activePack.used_sessions}/{activePack.total_sessions}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {activePack.total_sessions - activePack.used_sessions} sesiones restantes
+                      {activePack.expiry_date && ` · Vence ${format(new Date(activePack.expiry_date), "dd/MM/yyyy")}`}
+                    </p>
+                  </div>
+                )}
+                <div className="stat-card">
+                  <h3 className="text-sm font-semibold font-heading text-foreground mb-3">Observaciones</h3>
+                  <Textarea
+                    className="text-xs min-h-[80px]"
+                    defaultValue={patient.notes || ""}
+                    placeholder="Añadir observaciones internas..."
+                    onBlur={(e) => updatePatient.mutateAsync({ id: patient.id, notes: e.target.value || null })}
+                  />
+                </div>
               </div>
             </div>
           </div>
