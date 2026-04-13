@@ -295,6 +295,10 @@ export default function PatientDetailPage() {
           <PatientNotesSection patientId={patient.id} />
         </TabsContent>
 
+        <TabsContent value="sessions">
+          <SessionNotesSection entityType="patient" entityId={patient.id} />
+        </TabsContent>
+
         <TabsContent value="appointments">
           <div className="stat-card">
             <div className="flex items-center justify-between mb-4">
