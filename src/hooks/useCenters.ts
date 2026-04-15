@@ -43,3 +43,14 @@ export function useUpdateCenter() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["centers"] }),
   });
 }
+
+export function useDeleteCenter() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("centers").update({ deleted_at: new Date().toISOString() }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["centers"] }),
+  });
+}
