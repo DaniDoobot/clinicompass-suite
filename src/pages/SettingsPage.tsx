@@ -436,7 +436,119 @@ export default function SettingsPage() {
           </div>
         </TabsContent>
 
-        <TabsContent value="services">
+        <TabsContent value="specialties">
+          <div className="stat-card max-w-4xl">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-sm font-semibold font-heading text-foreground">Especialidades</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">Las especialidades aparecen como secciones en el menú lateral. Cada una agrupa sus servicios, citas y bonos.</p>
+              </div>
+              {isGerencia && (
+                <Button size="sm" onClick={() => { setSpecForm({ name: "", slug: "", icon_name: "Activity" }); setEditingSpecialty(null); setOpenSpecialty(true); }}>
+                  <Plus className="h-4 w-4 mr-1" />Nueva especialidad
+                </Button>
+              )}
+            </div>
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/30">
+                  <TableHead className="font-semibold">Nombre</TableHead>
+                  <TableHead className="font-semibold">Slug</TableHead>
+                  <TableHead className="font-semibold">Icono</TableHead>
+                  <TableHead className="font-semibold text-center">Activa</TableHead>
+                  <TableHead className="font-semibold">Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {specialtiesLoading ? (
+                  <TableRow><TableCell colSpan={5} className="text-center py-4 text-muted-foreground">Cargando...</TableCell></TableRow>
+                ) : !allSpecialties?.length ? (
+                  <TableRow><TableCell colSpan={5} className="text-center py-4 text-muted-foreground">Sin especialidades</TableCell></TableRow>
+                ) : allSpecialties.map((spec: any) => (
+                  <TableRow key={spec.id} className={!spec.active ? "opacity-50" : ""}>
+                    <TableCell className="text-sm font-medium">{spec.name}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground font-mono">{spec.slug}</TableCell>
+                    <TableCell className="text-sm">{spec.icon_name}</TableCell>
+                    <TableCell className="text-center">
+                      <Switch checked={spec.active} onCheckedChange={async () => {
+                        try {
+                          await updateSpecialtyMut.mutateAsync({ id: spec.id, active: !spec.active });
+                          toast.success(spec.active ? "Especialidad desactivada" : "Especialidad activada");
+                        } catch (e: any) { toast.error(e.message); }
+                      }} />
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => {
+                          setEditingSpecialty(spec);
+                          setSpecForm({ name: spec.name, slug: spec.slug, icon_name: spec.icon_name });
+                          setOpenSpecialty(true);
+                        }}>
+                          <Pencil className="h-3 w-3" /> Editar
+                        </Button>
+                        {isGerencia && (
+                          <button className="p-1.5 rounded-md hover:bg-destructive/10 transition-colors" onClick={() => setDeleteSpecialtyTarget(spec)}>
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          <Dialog open={openSpecialty} onOpenChange={setOpenSpecialty}>
+            <DialogContent className="max-w-md">
+              <DialogHeader><DialogTitle>{editingSpecialty ? "Editar especialidad" : "Nueva especialidad"}</DialogTitle></DialogHeader>
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Nombre *</Label>
+                  <Input className="h-9" value={specForm.name} onChange={e => setSpecForm({ ...specForm, name: e.target.value })} placeholder="Ej: Acupuntura" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Slug (URL)</Label>
+                  <Input className="h-9" value={specForm.slug} onChange={e => setSpecForm({ ...specForm, slug: e.target.value })} placeholder="Se genera automáticamente" />
+                  <p className="text-[10px] text-muted-foreground">Déjalo vacío para generarlo a partir del nombre</p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Icono</Label>
+                  <Select value={specForm.icon_name} onValueChange={v => setSpecForm({ ...specForm, icon_name: v })}>
+                    <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {ICON_OPTIONS.map(icon => (
+                        <SelectItem key={icon} value={icon}>{icon}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 mt-2">
+                <Button variant="outline" onClick={() => setOpenSpecialty(false)}>Cancelar</Button>
+                <Button onClick={handleSaveSpecialty} disabled={createSpecialty.isPending || updateSpecialtyMut.isPending}>
+                  {editingSpecialty ? "Guardar cambios" : "Crear especialidad"}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <AlertDialog open={!!deleteSpecialtyTarget} onOpenChange={(open) => { if (!open) setDeleteSpecialtyTarget(null); }}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>¿Eliminar especialidad?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Se eliminará la especialidad <strong>"{deleteSpecialtyTarget?.name}"</strong>. Los servicios asociados no se eliminarán.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction onClick={handleDeleteSpecialty} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Eliminar</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </TabsContent>
+
           <div className="stat-card max-w-4xl">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-semibold font-heading text-foreground">Servicios disponibles</h3>
