@@ -22,6 +22,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Constants } from "@/integrations/supabase/types";
+import { useAllSpecialties, useCreateSpecialty, useUpdateSpecialty, useDeleteSpecialty } from "@/hooks/useSpecialties";
 
 const ALL_ROLES = Constants.public.Enums.app_role;
 const ROLE_LABELS: Record<string, string> = {
