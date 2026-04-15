@@ -101,6 +101,19 @@ export function useUpdateContact() {
   });
 }
 
+export function useDeleteContact() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("contacts").update({ deleted_at: new Date().toISOString() }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["contacts"] });
+    },
+  });
+}
+
 export function useContactInteractions(contactId: string | undefined) {
   return useQuery({
     queryKey: ["contact-interactions", contactId],
