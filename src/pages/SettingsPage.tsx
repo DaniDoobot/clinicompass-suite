@@ -366,6 +366,7 @@ export default function SettingsPage() {
         <TabsList className="flex-wrap">
           <TabsTrigger value="general" className="gap-1"><Settings className="h-3.5 w-3.5" /> General</TabsTrigger>
           <TabsTrigger value="roles" className="gap-1"><Shield className="h-3.5 w-3.5" /> Roles</TabsTrigger>
+          <TabsTrigger value="specialties" className="gap-1"><Sparkles className="h-3.5 w-3.5" /> Especialidades</TabsTrigger>
           <TabsTrigger value="services" className="gap-1"><Tag className="h-3.5 w-3.5" /> Servicios</TabsTrigger>
           <TabsTrigger value="assignments" className="gap-1"><MapPin className="h-3.5 w-3.5" /> Asignaciones</TabsTrigger>
           <TabsTrigger value="billing" className="gap-1"><Receipt className="h-3.5 w-3.5" /> Series facturación</TabsTrigger>
