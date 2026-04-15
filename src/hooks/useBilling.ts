@@ -117,6 +117,18 @@ export function useUpdateQuote() {
   });
 }
 
+export function useDeleteQuote() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await supabase.from("quote_items").delete().eq("quote_id", id);
+      const { error } = await supabase.from("quotes").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["quotes"] }),
+  });
+}
+
 export function useSaveQuoteItems() {
   const qc = useQueryClient();
   return useMutation({
