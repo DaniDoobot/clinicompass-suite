@@ -619,9 +619,9 @@ export default function SettingsPage() {
                   <Select value={svcForm.business_line} onValueChange={v => setSvcForm({ ...svcForm, business_line: v })}>
                     <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="fisioterapia">Fisioterapia</SelectItem>
-                      <SelectItem value="nutricion">Nutrición</SelectItem>
-                      <SelectItem value="psicotecnicos">Psicotécnicos</SelectItem>
+                      {allSpecialties?.filter((sp: any) => sp.active).map((sp: any) => (
+                        <SelectItem key={sp.slug} value={sp.slug}>{sp.name}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
