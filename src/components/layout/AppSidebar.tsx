@@ -133,25 +133,27 @@ export function AppSidebar() {
             <Stethoscope className="h-4.5 w-4.5 text-sidebar-primary-foreground" />
           </div>
           {!collapsed && (
-            <div className="flex items-center gap-2 min-w-0 flex-1">
-              <div className="min-w-0">
-                <h1 className="text-sm font-bold text-sidebar-foreground font-heading tracking-tight leading-tight">SaludCRM</h1>
-                <p className="text-[10px] text-sidebar-muted leading-tight">Gestión sanitaria</p>
-              </div>
-              <div className="ml-auto h-7 w-16 overflow-hidden flex items-center justify-center">
-                <img
-                  src={doobotLogo}
-                  alt="doobot.ai"
-                  className="h-10 w-auto object-cover object-center scale-[1.4]"
-                  style={{ objectPosition: "center" }}
-                />
-              </div>
+            <div className="min-w-0 flex-1">
+              <h1 className="text-sm font-bold text-sidebar-foreground font-heading tracking-tight leading-tight">SaludCRM</h1>
+              <p className="text-[10px] text-sidebar-muted leading-tight">Gestión sanitaria</p>
             </div>
           )}
         </div>
       </SidebarHeader>
 
       <SidebarContent className="px-2">
+        {!collapsed && (
+          <div className="px-3 pt-4 pb-2 flex items-center gap-2">
+            <span className="text-[10px] uppercase tracking-widest font-semibold text-sidebar-muted">Powered by</span>
+            <div className="h-6 flex items-center">
+              <img
+                src={doobotLogo}
+                alt="doobot.ai"
+                className="h-8 w-auto object-contain"
+              />
+            </div>
+          </div>
+        )}
         <NavGroup label="Principal" items={mainNav} />
         <NavGroup label="Especialidades" items={clinicalNav} />
         <NavGroup label="Gestión" items={managementNav} />
