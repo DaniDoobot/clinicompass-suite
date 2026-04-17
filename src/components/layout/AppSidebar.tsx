@@ -24,6 +24,7 @@ import {
   Eye,
   type LucideIcon,
 } from "lucide-react";
+import doobotLogo from "@/assets/doobot-logo.png";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
@@ -125,16 +126,26 @@ export function AppSidebar() {
   const displayRole = roles.length > 0 ? roles[0].charAt(0).toUpperCase() + roles[0].slice(1) : "Sin rol";
 
   return (
-    <Sidebar collapsible="icon" className="border-r-0">
-      <SidebarHeader className="p-4">
+    <Sidebar collapsible="icon" className="border-r border-sidebar-border">
+      <SidebarHeader className="p-4 border-b border-sidebar-border/60">
         <div className="flex items-center gap-2.5">
-          <div className="h-8 w-8 rounded-lg bg-sidebar-primary flex items-center justify-center flex-shrink-0">
-            <Stethoscope className="h-4 w-4 text-sidebar-primary-foreground" />
+          <div className="h-9 w-9 rounded-lg bg-sidebar-primary flex items-center justify-center flex-shrink-0 shadow-sm">
+            <Stethoscope className="h-4.5 w-4.5 text-sidebar-primary-foreground" />
           </div>
           {!collapsed && (
-            <div>
-              <h1 className="text-sm font-bold text-sidebar-accent-foreground font-heading tracking-tight">SaludCRM</h1>
-              <p className="text-[10px] text-sidebar-muted">Gestión sanitaria</p>
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <div className="min-w-0">
+                <h1 className="text-sm font-bold text-sidebar-foreground font-heading tracking-tight leading-tight">SaludCRM</h1>
+                <p className="text-[10px] text-sidebar-muted leading-tight">Gestión sanitaria</p>
+              </div>
+              <div className="ml-auto h-7 w-16 overflow-hidden flex items-center justify-center">
+                <img
+                  src={doobotLogo}
+                  alt="doobot.ai"
+                  className="h-10 w-auto object-cover object-center scale-[1.4]"
+                  style={{ objectPosition: "center" }}
+                />
+              </div>
             </div>
           )}
         </div>

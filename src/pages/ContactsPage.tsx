@@ -20,6 +20,7 @@ import { format } from "date-fns";
 import { PatientNotesSection } from "@/components/patient/PatientNotesSection";
 import { SessionNotesSection } from "@/components/patient/SessionNotesSection";
 import { UnifiedVoiceButton } from "@/components/patient/UnifiedVoiceButton";
+import { CreateContactVoiceButton } from "@/components/contact/CreateContactVoiceButton";
 
 const categoryVariant: Record<string, "info" | "success" | "primary"> = {
   lead: "info",
@@ -91,9 +92,12 @@ export default function ContactsPage({ filterCategory }: { filterCategory?: stri
   return (
     <AppLayout>
       <PageHeader title={pageTitle} description={pageDesc}>
-        <Button size="sm" className="gap-2" onClick={() => setDialogOpen(true)}>
-          <Plus className="h-4 w-4" /> Nuevo contacto
-        </Button>
+        <div className="flex items-center gap-2">
+          <CreateContactVoiceButton />
+          <Button size="sm" className="gap-2" onClick={() => setDialogOpen(true)}>
+            <Plus className="h-4 w-4" /> Nuevo contacto
+          </Button>
+        </div>
       </PageHeader>
 
       <div className="flex items-center gap-3 mb-4 flex-wrap">
