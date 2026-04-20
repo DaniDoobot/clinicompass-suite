@@ -134,7 +134,7 @@ export function AppSidebar() {
               <Stethoscope className="h-4.5 w-4.5 text-sidebar-primary-foreground" />
             </div>
           ) : (
-            <img src={nweeLogo} alt="nwee — Health IA Management" className="h-10 w-auto object-contain" />
+            <img src={nweeLogo} alt="nwee — Health IA Management" className="h-16 w-auto object-contain" />
           )}
         </div>
       </SidebarHeader>
