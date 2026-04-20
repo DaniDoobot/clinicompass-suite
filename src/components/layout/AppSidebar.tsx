@@ -24,7 +24,7 @@ import {
   Eye,
   type LucideIcon,
 } from "lucide-react";
-import doobotLogo from "@/assets/doobot-logo.png";
+import nweeLogo from "@/assets/nwee-logo.png";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
@@ -128,32 +128,18 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">
       <SidebarHeader className="p-4 border-b border-sidebar-border/60">
-        <div className="flex items-center gap-2.5">
-          <div className="h-9 w-9 rounded-lg bg-sidebar-primary flex items-center justify-center flex-shrink-0 shadow-sm">
-            <Stethoscope className="h-4.5 w-4.5 text-sidebar-primary-foreground" />
-          </div>
-          {!collapsed && (
-            <div className="min-w-0 flex-1">
-              <h1 className="text-sm font-bold text-sidebar-foreground font-heading tracking-tight leading-tight">SaludCRM</h1>
-              <p className="text-[10px] text-sidebar-muted leading-tight">Gestión sanitaria</p>
+        <div className="flex items-center justify-center min-h-[40px]">
+          {collapsed ? (
+            <div className="h-9 w-9 rounded-lg bg-sidebar-primary flex items-center justify-center flex-shrink-0 shadow-sm">
+              <Stethoscope className="h-4.5 w-4.5 text-sidebar-primary-foreground" />
             </div>
+          ) : (
+            <img src={nweeLogo} alt="nwee — Health IA Management" className="h-10 w-auto object-contain" />
           )}
         </div>
       </SidebarHeader>
 
-      <SidebarContent className="px-2">
-        {!collapsed && (
-          <div className="px-3 pt-4 pb-2 flex items-center gap-2">
-            <span className="text-[10px] uppercase tracking-widest font-semibold text-sidebar-muted">Powered by</span>
-            <div className="h-6 flex items-center">
-              <img
-                src={doobotLogo}
-                alt="doobot.ai"
-                className="h-8 w-auto object-contain"
-              />
-            </div>
-          </div>
-        )}
+      <SidebarContent className="px-2 pt-2">
         <NavGroup label="Principal" items={mainNav} />
         <NavGroup label="Especialidades" items={clinicalNav} />
         <NavGroup label="Gestión" items={managementNav} />
