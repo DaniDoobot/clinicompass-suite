@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -25,14 +25,16 @@ serve(async (req) => {
     const supabaseAuth = createClient(supabaseUrl, supabaseKey, {
       global: { headers: { Authorization: authHeader } },
     });
-    const { data: { user }, error: authErr } = await supabaseAuth.auth.getUser();
-    if (authErr || !user) throw new Error("Unauthorized");
+    const token = authHeader.replace(/^Bearer\s+/i, "");
+    const { data: claimsData, error: authErr } = await supabaseAuth.auth.getClaims(token);
+    const userId = claimsData?.claims?.sub;
+    if (authErr || !userId) throw new Error("Unauthorized");
 
     const supabaseAdmin = createClient(supabaseUrl, serviceKey);
     const { data: staffProfile } = await supabaseAdmin
       .from("staff_profiles")
       .select("id")
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .single();
 
     const { transcription } = await req.json();
