@@ -19,6 +19,12 @@ interface CreatedContact {
   center?: { name?: string };
 }
 
+interface SessionResult {
+  intent: "create_session" | "append_to_session";
+  session: { id: string; session_number: number };
+  entity: { entity_type: "patient" | "contact"; entity_id: string; display_name: string };
+}
+
 export function CreateContactVoiceButton() {
   const qc = useQueryClient();
   const navigate = useNavigate();
@@ -27,6 +33,7 @@ export function CreateContactVoiceButton() {
   const [transcript, setTranscript] = useState("");
   const [interpretation, setInterpretation] = useState<string | null>(null);
   const [created, setCreated] = useState<CreatedContact | null>(null);
+  const [sessionResult, setSessionResult] = useState<SessionResult | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recognitionRef = useRef<any>(null);
@@ -38,6 +45,7 @@ export function CreateContactVoiceButton() {
     setTranscript("");
     setInterpretation(null);
     setCreated(null);
+    setSessionResult(null);
     transcriptRef.current = "";
   };
 
@@ -59,14 +67,23 @@ export function CreateContactVoiceButton() {
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
 
-      setCreated(data.contact);
       setInterpretation(data.interpretation || null);
       setStatus("done");
-      toast.success(`Contacto "${data.contact.first_name} ${data.contact.last_name || ""}" creado`);
-      qc.invalidateQueries({ queryKey: ["contacts"] });
+
+      if (data.intent === "create_session" || data.intent === "append_to_session") {
+        setSessionResult({ intent: data.intent, session: data.session, entity: data.entity });
+        const verb = data.intent === "create_session" ? "creada" : "actualizada";
+        toast.success(`Sesión ${data.session.session_number} de ${data.entity.display_name} ${verb}`);
+        qc.invalidateQueries({ queryKey: ["patient_sessions"] });
+        qc.invalidateQueries({ queryKey: ["patient_synopsis"] });
+      } else {
+        setCreated(data.contact);
+        toast.success(`Contacto "${data.contact.first_name} ${data.contact.last_name || ""}" creado`);
+        qc.invalidateQueries({ queryKey: ["contacts"] });
+      }
     } catch (err: any) {
       setStatus("error");
-      toast.error(err.message || "Error al crear contacto");
+      toast.error(err.message || "Error al procesar instrucción");
     }
   }, [qc]);
 
