@@ -71,7 +71,7 @@ export function UnifiedVoiceButton({ entityType, entityId, compact }: Props) {
       } else if (data.session_action_result?.type === "appended") {
         parts.push(`sesión ${data.session_action_result.session_number ?? ""} actualizada`.trim());
       } else if (data.notes_appended) {
-        parts.push("sesión registrada");
+        parts.push("observaciones actualizadas");
       }
       if (data.session_action_result || data.notes_appended) parts.push("sinopsis actualizada");
       if (parts.length > 0) {
