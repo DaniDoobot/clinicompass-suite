@@ -1,5 +1,14 @@
+// process-voice-unified: clasifica una transcripción de voz y la envía al destino correcto.
+// Reglas estrictas:
+//   - Si la voz menciona explícitamente "sesión N" / "nueva sesión" / "en la sesión X":
+//        → va a sesiones (crear o añadir a una existente)
+//   - Si la voz menciona campos básicos de la ficha (centro, dirección, teléfono,
+//     profesional asignado, etc.) → modifica la ficha
+//   - Si no menciona ni "sesión" ni un campo concreto pero da contenido clínico →
+//     se añade al campo de notas (campo `notes`) del contacto/paciente,
+//     NO se crea sesión automáticamente.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -7,11 +16,82 @@ const corsHeaders = {
 };
 
 function normalize(s: string): string {
-  return (s || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim();
+  return (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+}
+
+const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+const supabaseKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const lovableKey = Deno.env.get("LOVABLE_API_KEY")!;
+
+async function regenerateSessionSummary(admin: any, sessionId: string): Promise<string> {
+  const { data: entries } = await admin
+    .from("patient_session_entries")
+    .select("content, created_at, source")
+    .eq("session_id", sessionId)
+    .order("created_at", { ascending: true });
+
+  const entriesText = (entries || [])
+    .map((e: any, i: number) => `[Aportación ${i + 1} · ${new Date(e.created_at).toLocaleString("es-ES")} · ${e.source}]\n${e.content}`)
+    .join("\n\n");
+  if (!entriesText) return "";
+
+  const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${lovableKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "google/gemini-2.5-flash",
+      messages: [
+        { role: "system", content: "Eres un asistente clínico. Genera un resumen profesional, claro, en español, sin markdown, máx 8-10 líneas, integrando todas las aportaciones de la sesión sin duplicidades. Reformula, no copies literal." },
+        { role: "user", content: `Aportaciones de la sesión:\n\n${entriesText}\n\nResumen actualizado de la sesión:` },
+      ],
+    }),
+  });
+  if (!r.ok) return "";
+  const d = await r.json();
+  return (d.choices?.[0]?.message?.content || "").trim();
+}
+
+async function regenerateGlobalSynopsis(admin: any, idCol: string, entityId: string, staffId: string | null) {
+  const { data: sessions } = await admin
+    .from("patient_sessions")
+    .select("session_number, session_date, summary")
+    .eq(idCol, entityId)
+    .order("session_number", { ascending: true });
+
+  const sessionsText = (sessions || [])
+    .filter((s: any) => s.summary)
+    .map((s: any) => `Sesión ${s.session_number} (${new Date(s.session_date).toLocaleDateString("es-ES")}):\n${s.summary}`)
+    .join("\n\n");
+
+  const { data: existing } = await admin
+    .from("patient_synopsis")
+    .select("id")
+    .eq(idCol, entityId)
+    .maybeSingle();
+
+  if (!sessionsText) {
+    if (existing) await admin.from("patient_synopsis").update({ content: "", updated_by: staffId }).eq("id", existing.id);
+    return;
+  }
+
+  const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${lovableKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "google/gemini-2.5-flash",
+      messages: [
+        { role: "system", content: "Sinopsis global breve (5-10 líneas) basada SOLO en los resúmenes de sesión. Español, sin markdown, integra y sintetiza. No inventes." },
+        { role: "user", content: `Resúmenes:\n\n${sessionsText}\n\nSinopsis global actualizada:` },
+      ],
+    }),
+  });
+  if (!r.ok) return;
+  const d = await r.json();
+  const synopsis = (d.choices?.[0]?.message?.content || "").trim();
+  if (!synopsis) return;
+  if (existing) await admin.from("patient_synopsis").update({ content: synopsis, updated_by: staffId }).eq("id", existing.id);
+  else await admin.from("patient_synopsis").insert({ content: synopsis, updated_by: staffId, [idCol]: entityId });
 }
 
 serve(async (req) => {
@@ -20,272 +100,246 @@ serve(async (req) => {
   try {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) throw new Error("No auth header");
+    const token = authHeader.replace("Bearer ", "");
 
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const lovableKey = Deno.env.get("LOVABLE_API_KEY")!;
+    const supabaseAuth = createClient(supabaseUrl, supabaseKey);
+    const { data: claims, error: authErr } = await (supabaseAuth.auth as any).getClaims(token);
+    if (authErr || !claims) throw new Error("Unauthorized");
+    const userId = claims.claims?.sub;
+    if (!userId) throw new Error("Unauthorized: no sub");
 
-    const supabaseAuth = createClient(supabaseUrl, supabaseKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const { data: { user }, error: authErr } = await supabaseAuth.auth.getUser();
-    if (authErr || !user) throw new Error("Unauthorized");
-
-    const supabaseAdmin = createClient(supabaseUrl, serviceKey);
-    const { data: staffProfile } = await supabaseAdmin
+    const admin = createClient(supabaseUrl, serviceKey);
+    const { data: staffProfile } = await admin
       .from("staff_profiles")
       .select("id, first_name, last_name")
-      .eq("user_id", user.id)
-      .single();
+      .eq("user_id", userId)
+      .maybeSingle();
+    const staffId = staffProfile?.id || null;
 
     const { transcription, entity_type, entity_id, audio_file_path } = await req.json();
-    if (!transcription || !entity_type || !entity_id) {
-      throw new Error("Missing transcription, entity_type, or entity_id");
-    }
+    if (!transcription || !entity_type || !entity_id) throw new Error("Missing transcription/entity_type/entity_id");
 
     const table = entity_type === "patient" ? "patients" : "contacts";
     const idCol = entity_type === "patient" ? "patient_id" : "contact_id";
 
-    // Fetch current record for field editing context
-    const { data: currentRecord, error: fetchErr } = await supabaseAdmin
-      .from(table)
-      .select("*, center:centers(id, name, city)")
-      .eq("id", entity_id)
-      .single();
-    if (fetchErr) throw new Error(`Record not found: ${fetchErr.message}`);
+    // Fetch current record + active centers + staff catalog + existing sessions
+    const [{ data: currentRecord, error: fErr }, { data: centers }, { data: allStaff }, { data: existingSessions }] = await Promise.all([
+      admin.from(table).select("*, center:centers(id, name, city)").eq("id", entity_id).single(),
+      admin.from("centers").select("id, name, city").is("deleted_at", null).eq("active", true),
+      admin.from("staff_profiles").select("id, first_name, last_name").eq("active", true),
+      admin.from("patient_sessions").select("id, session_number, session_date").eq(idCol, entity_id).order("session_number", { ascending: true }),
+    ]);
+    if (fErr) throw new Error(`Record not found: ${fErr.message}`);
 
-    // Fetch active centers catalog for LLM disambiguation
-    const { data: centers } = await supabaseAdmin
-      .from("centers")
-      .select("id, name, city")
-      .is("deleted_at", null)
-      .eq("active", true);
-
-    const centerCatalog = (centers || []).map((c: any) =>
-      `  • ${c.name}${c.city ? ` (${c.city})` : ""} → id: ${c.id}`
-    ).join("\n");
+    const centerCatalog = (centers || []).map((c: any) => `  • ${c.name}${c.city ? ` (${c.city})` : ""} → id: ${c.id}`).join("\n");
+    const staffCatalog = (allStaff || []).map((s: any) => `  • ${s.first_name} ${s.last_name} → id: ${s.id}`).join("\n");
+    const sessionsCatalog = (existingSessions || []).map((s: any) => `  • Sesión ${s.session_number} (${new Date(s.session_date).toLocaleDateString("es-ES")}) → id: ${s.id}`).join("\n") || "  (sin sesiones todavía)";
 
     const editableFields: Record<string, string> = {
       first_name: "Nombre",
       last_name: "Apellido(s)",
       nif: "NIF/DNI",
-      birth_date: "Fecha de nacimiento (formato YYYY-MM-DD)",
+      birth_date: "Fecha de nacimiento (YYYY-MM-DD)",
       sex: "Sexo (hombre/mujer)",
       phone: "Teléfono",
       email: "Email",
       address: "Dirección postal (calle, número, piso) — NO usar para centro clínico",
       city: "Ciudad",
       postal_code: "Código postal",
-      notes: "Observaciones/notas",
+      notes: "Notas internas / información clínica acumulada",
       source: "Canal de captación",
       company_name: "Empresa",
+      assigned_professional_id: "Profesional asignado del paciente (UUID de staff)",
+      center_id: "Centro clínico asignado (UUID del centro)",
       fiscal_name: "Nombre fiscal",
       fiscal_nif: "NIF fiscal",
       fiscal_address: "Dirección fiscal",
       fiscal_email: "Email fiscal",
       fiscal_phone: "Teléfono fiscal",
-      center_id: "Centro clínico asignado (UUID del centro de la lista) — usar SOLO cuando el usuario diga 'centro', 'sede' o 'clínica'",
     };
 
-    const currentValues = Object.entries(editableFields)
-      .map(([key, label]) => {
-        if (key === "center_id") {
-          const cur = currentRecord.center ? `${currentRecord.center.name}${currentRecord.center.city ? ` (${currentRecord.center.city})` : ""}` : "(vacío)";
-          return `- ${label} (${key}): ${cur}`;
-        }
-        return `- ${label} (${key}): ${currentRecord[key] ?? "(vacío)"}`;
-      })
-      .join("\n");
+    const currentValues = Object.entries(editableFields).map(([key, label]) => {
+      if (key === "center_id") {
+        const cur = currentRecord.center ? `${currentRecord.center.name}${currentRecord.center.city ? ` (${currentRecord.center.city})` : ""}` : "(vacío)";
+        return `- ${label} (${key}): ${cur}`;
+      }
+      return `- ${label} (${key}): ${currentRecord[key] ?? "(vacío)"}`;
+    }).join("\n");
 
-    // Single LLM call that classifies AND extracts structured actions
+    // ============= LLM CLASSIFICATION + EXTRACTION =============
     const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${lovableKey}`,
-        "Content-Type": "application/json",
-      },
+      headers: { Authorization: `Bearer ${lovableKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: "google/gemini-2.5-flash",
         messages: [
           {
             role: "system",
-            content: `Eres un asistente de CRM sanitario. Un profesional dicta un audio que puede contener CUALQUIER combinación de:
+            content: `Eres un asistente de un CRM clínico. Recibes una transcripción de voz dictada por un profesional sanitario sobre la ficha de un paciente/contacto.
 
-1. INSTRUCCIONES PARA MODIFICAR LA FICHA del paciente/contacto
-2. NOTAS DE SESIÓN CLÍNICA
+Debes decidir y devolver, mediante la función "process_voice", una de estas tres rutas (o combinación de ellas):
 
-Debes analizar la transcripción y usar la función "process_voice".
-
-================================================
-REGLAS CRÍTICAS DE DESAMBIGUACIÓN — CENTRO vs DIRECCIÓN
-================================================
-Estos dos campos son SEMÁNTICAMENTE DIFERENTES y NUNCA deben confundirse:
-
-• "centro" / "sede" / "clínica" / "centro clínico" / "centro asignado"
-  → MODIFICA SIEMPRE el campo "center_id" (NO "address")
-  → El new_value DEBE ser el UUID exacto de uno de los centros del catálogo de abajo
-  → Si el centro mencionado no aparece en el catálogo, NO incluyas el cambio
-  → Ejemplos:
-     - "cambia el centro a Alcalá" → field="center_id", new_value="<uuid de Alcalá>"
-     - "asígnalo al centro de Torrejón" → field="center_id"
-     - "muévelo a la clínica de Getafe" → field="center_id"
-
-• "dirección" / "domicilio" / "calle" / "vive en" / "dirección postal"
-  → MODIFICA SIEMPRE el campo "address" (NO "center_id")
-  → Ejemplos:
-     - "cambia la dirección a Calle Mayor 12" → field="address"
-     - "vive en Avenida de la Paz 5" → field="address"
-     - "su domicilio nuevo es..." → field="address"
-
-NUNCA modifiques "address" cuando el usuario diga "centro".
-NUNCA modifiques "center_id" cuando el usuario diga "dirección".
-Si tienes la mínima duda sobre cuál es el campo correcto, NO incluyas el cambio.
-
-CATÁLOGO DE CENTROS DISPONIBLES (usa estos UUIDs exactos):
-${centerCatalog || "  (sin centros configurados)"}
+1) FIELD_CHANGES — modifica campos de la FICHA BÁSICA (datos fijos del paciente).
+2) SESSION_ACTION — operación sobre una SESIÓN clínica concreta. SOLO si el usuario menciona EXPLÍCITAMENTE "sesión", "sesión nueva", "nueva sesión", "sesión X", "en la sesión X", "crea una sesión", "añade en la sesión X". Si no aparece la palabra "sesión" o equivalente claro, NUNCA uses session_action.
+3) NOTES_APPEND — el usuario da contenido clínico/operativo libre PERO no menciona ninguna sesión y no menciona campos concretos. En ese caso, añade el contenido al campo "notes" del paciente/contacto, anteponiendo la fecha actual en formato [DD/MM/YYYY HH:mm] y manteniendo el contenido anterior intacto.
 
 ================================================
-RESTO DE REGLAS
+REGLAS CRÍTICAS — CENTRO vs DIRECCIÓN
 ================================================
-- Solo modifica campos mencionados explícita o implícitamente.
-- Para fechas, usa formato YYYY-MM-DD.
-- Para sexo, usa "hombre" o "mujer".
-- Si dice "segundo apellido", modifica last_name añadiendo/cambiando la segunda palabra.
-- Sé CONSERVADOR: ante ambigüedad, NO incluyas el cambio.
+• "centro" / "sede" / "clínica" → SIEMPRE field_changes con field="center_id" usando UUID del catálogo. NUNCA "address".
+• "dirección" / "domicilio" / "calle" / "vive en" → SIEMPRE field_changes con field="address". NUNCA "center_id".
+Si dudas, NO incluyas el cambio.
 
-Reglas para session_note:
-- Extrae información sobre sesiones, visitas, tratamientos, evolución del paciente.
-- Si menciona un doctor/profesional, inclúyelo.
-- Si no hay información de sesión, devuelve null.`,
+================================================
+CATÁLOGO DE CENTROS DISPONIBLES (UUIDs exactos)
+================================================
+${centerCatalog || "  (sin centros)"}
+
+================================================
+CATÁLOGO DE STAFF (UUIDs para assigned_professional_id y para session.professional_id)
+================================================
+${staffCatalog || "  (sin staff)"}
+
+================================================
+SESIONES EXISTENTES DEL PACIENTE
+================================================
+${sessionsCatalog}
+
+================================================
+REGLAS DE SESSION_ACTION
+================================================
+Tipos:
+- "create_session": el usuario dice "crea una nueva sesión", "nueva sesión de hoy", etc. Devuelve session_date (ISO si lo dice), professional_id (UUID si menciona doctor), y content (el contenido inicial dictado, ya redactado, NO la transcripción literal).
+- "append_to_session": el usuario dice "añade en la sesión 4 que…", "en la sesión 2 el doctor dijo…". Devuelve session_id (busca por session_number en el catálogo) y content.
+- Si el usuario menciona un profesional al crear/añadir, intenta hacer match contra el catálogo de staff y devuelve professional_id.
+
+================================================
+REGLA NOTES_APPEND
+================================================
+Solo si NO hay session_action y NO hay field_changes y SÍ hay contenido clínico libre.
+- Genera "notes_append" con el texto a añadir (limpio, profesional, sin "el usuario dijo…").
+
+================================================
+FICHA ACTUAL
+================================================
+${currentValues}`,
           },
           {
             role: "user",
-            content: `Ficha actual:\n${currentValues}\n\nTranscripción del audio: "${transcription}"`,
+            content: `Transcripción del audio: "${transcription}"\n\nClasifica y devuelve la acción correspondiente.`,
           },
         ],
-        tools: [
-          {
-            type: "function",
-            function: {
-              name: "process_voice",
-              description: "Procesa la instrucción de voz clasificando y extrayendo cambios de ficha y/o notas de sesión.",
-              parameters: {
-                type: "object",
-                properties: {
-                  field_changes: {
-                    type: "array",
-                    description: "Cambios a aplicar en los campos. Vacío si no hay cambios de datos.",
-                    items: {
-                      type: "object",
-                      properties: {
-                        field: { type: "string", description: "Nombre del campo a modificar (ej. 'address', 'center_id', 'phone')" },
-                        new_value: { type: "string", description: "Nuevo valor. Para center_id debe ser el UUID exacto del catálogo." },
-                        reason: { type: "string", description: "Explicación breve, indicando claramente la palabra clave del audio que justifica el cambio (ej. 'el usuario dijo centro', 'el usuario dijo dirección')." },
-                      },
-                      required: ["field", "new_value", "reason"],
+        tools: [{
+          type: "function",
+          function: {
+            name: "process_voice",
+            description: "Clasifica y extrae acciones de la voz.",
+            parameters: {
+              type: "object",
+              properties: {
+                field_changes: {
+                  type: "array",
+                  description: "Cambios a aplicar en la ficha básica.",
+                  items: {
+                    type: "object",
+                    properties: {
+                      field: { type: "string" },
+                      new_value: { type: "string" },
+                      reason: { type: "string" },
                     },
-                  },
-                  session_note: {
-                    type: "string",
-                    nullable: true,
-                    description: "Contenido de la nota de sesión. null si no hay.",
-                  },
-                  interpretation: {
-                    type: "string",
-                    description: "Resumen de lo interpretado.",
+                    required: ["field", "new_value", "reason"],
                   },
                 },
-                required: ["field_changes", "session_note", "interpretation"],
+                session_action: {
+                  type: "object",
+                  nullable: true,
+                  description: "Operación de sesión si el usuario lo mencionó explícitamente.",
+                  properties: {
+                    type: { type: "string", enum: ["create_session", "append_to_session"] },
+                    session_id: { type: "string", nullable: true },
+                    session_date: { type: "string", nullable: true },
+                    professional_id: { type: "string", nullable: true },
+                    content: { type: "string" },
+                  },
+                  required: ["type", "content"],
+                },
+                notes_append: {
+                  type: "string",
+                  nullable: true,
+                  description: "Texto a añadir al campo notes si no hay sesión ni campo concreto.",
+                },
+                interpretation: { type: "string" },
               },
+              required: ["field_changes", "session_action", "notes_append", "interpretation"],
             },
           },
-        ],
+        }],
         tool_choice: { type: "function", function: { name: "process_voice" } },
       }),
     });
 
     if (!aiResponse.ok) {
-      const errText = await aiResponse.text();
-      console.error("AI error:", aiResponse.status, errText);
-      if (aiResponse.status === 429) {
-        return new Response(JSON.stringify({ error: "Límite de peticiones excedido." }), {
-          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      if (aiResponse.status === 402) {
-        return new Response(JSON.stringify({ error: "Créditos de IA agotados." }), {
-          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
+      const t = await aiResponse.text();
+      console.error("AI error:", aiResponse.status, t);
+      if (aiResponse.status === 429) return new Response(JSON.stringify({ error: "Límite de peticiones excedido." }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      if (aiResponse.status === 402) return new Response(JSON.stringify({ error: "Créditos de IA agotados." }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       throw new Error("Error al procesar con IA");
     }
 
     const aiData = await aiResponse.json();
     const toolCall = aiData.choices?.[0]?.message?.tool_calls?.[0];
     if (!toolCall) throw new Error("La IA no pudo interpretar la instrucción");
-
     const parsed = JSON.parse(toolCall.function.arguments);
-    let { field_changes = [], session_note, interpretation } = parsed;
+    let { field_changes = [], session_action, notes_append, interpretation } = parsed;
 
-    // ===== POST-VALIDATION GUARD: avoid silly "centro" -> address mistakes =====
+    // ============= GUARDS post-LLM =============
     const transNorm = normalize(transcription);
     const mentionsCenter = /(\bcentro\b|\bsede\b|\bclinica\b|\bcl[ií]nica\b)/.test(transNorm);
     const mentionsAddress = /(\bdirecc[ií]on\b|\bdomicilio\b|\bcalle\b|\bavenida\b|\bavda\b|\bvive en\b|\bplaza\b)/.test(transNorm);
+    const mentionsSession = /(\bsesi[oó]n\b|\bsesiones\b)/.test(transNorm);
     const centerIds = new Set((centers || []).map((c: any) => c.id));
 
     field_changes = (field_changes || []).filter((c: any) => {
-      // If model wrote "address" but user only mentioned "centro" → discard
-      if (c.field === "address" && mentionsCenter && !mentionsAddress) {
-        console.warn("Guard: discarded address change — user mentioned 'centro' not 'dirección'", c);
-        return false;
-      }
-      // If model wrote "center_id" but user only mentioned "dirección" → discard
-      if (c.field === "center_id" && mentionsAddress && !mentionsCenter) {
-        console.warn("Guard: discarded center_id change — user mentioned 'dirección' not 'centro'", c);
-        return false;
-      }
-      // center_id must be a known UUID
-      if (c.field === "center_id" && !centerIds.has(c.new_value)) {
-        console.warn("Guard: discarded center_id with unknown UUID", c);
-        return false;
-      }
+      if (c.field === "address" && mentionsCenter && !mentionsAddress) return false;
+      if (c.field === "center_id" && mentionsAddress && !mentionsCenter) return false;
+      if (c.field === "center_id" && !centerIds.has(c.new_value)) return false;
       return true;
     });
 
-    const results: {
-      field_changes_applied: any[];
-      session_note_created: boolean;
-      session_content: string | null;
-      synopsis_updated: boolean;
-      interpretation: string;
-    } = {
-      field_changes_applied: [],
-      session_note_created: false,
-      session_content: session_note || null,
-      synopsis_updated: false,
+    // Hard guard: si la IA propuso session_action pero el usuario NO mencionó "sesión" → descarta
+    if (session_action && !mentionsSession) {
+      // Si hay contenido, lo redirigimos a notes_append
+      if (!notes_append && session_action.content) notes_append = session_action.content;
+      session_action = null;
+    }
+
+    const results: any = {
+      field_changes_applied: [] as any[],
+      session_action_result: null as any,
+      notes_appended: false,
       interpretation: interpretation || "",
     };
 
-    // --- PART 1: Apply field changes ---
+    // ============= APPLY FIELD CHANGES =============
     if (field_changes.length > 0) {
       const updateObj: Record<string, any> = {};
       const fieldsChanged: any[] = [];
-
       for (const change of field_changes) {
         if (!(change.field in editableFields)) continue;
         const oldValue = currentRecord[change.field];
         updateObj[change.field] = change.new_value === "" ? null : change.new_value;
 
-        // Build human-friendly label for center_id
-        let displayOld = oldValue ?? null;
-        let displayNew = change.new_value;
+        let displayOld: any = oldValue ?? null;
+        let displayNew: any = change.new_value;
         if (change.field === "center_id") {
           displayOld = currentRecord.center?.name ?? null;
           const tgt = (centers || []).find((c: any) => c.id === change.new_value);
           displayNew = tgt ? tgt.name : change.new_value;
         }
-
+        if (change.field === "assigned_professional_id") {
+          const tgt = (allStaff || []).find((s: any) => s.id === change.new_value);
+          displayNew = tgt ? `${tgt.first_name} ${tgt.last_name}` : change.new_value;
+        }
         fieldsChanged.push({
           field: change.field,
           label: editableFields[change.field].split(" — ")[0].split(" (")[0],
@@ -294,116 +348,96 @@ Reglas para session_note:
           reason: change.reason,
         });
       }
-
       if (Object.keys(updateObj).length > 0) {
-        const { error: updateErr } = await supabaseAdmin
-          .from(table)
-          .update(updateObj)
-          .eq("id", entity_id);
-        if (updateErr) console.error("Update error:", updateErr);
-
-        await supabaseAdmin.from("patient_voice_edits").insert({
+        const { error: updErr } = await admin.from(table).update(updateObj).eq("id", entity_id);
+        if (updErr) console.error("Update error:", updErr);
+        await admin.from("patient_voice_edits").insert({
           [idCol]: entity_id,
-          created_by: staffProfile?.id || null,
+          created_by: staffId,
           transcription,
           interpreted_instruction: interpretation,
           fields_changed: fieldsChanged,
           audio_file_path: audio_file_path || null,
         });
-
         results.field_changes_applied = fieldsChanged;
       }
     }
 
-    // --- PART 2: Create session note ---
-    if (session_note) {
-      const noteInsert: Record<string, any> = {
-        content: session_note,
-        source: "voice",
-        created_by: staffProfile?.id || null,
-        transcription,
-        audio_file_path: audio_file_path || null,
-        [idCol]: entity_id,
-      };
+    // ============= SESSION ACTION =============
+    if (session_action) {
+      if (session_action.type === "create_session") {
+        const { data: session, error: cErr } = await admin
+          .from("patient_sessions")
+          .insert({
+            [idCol]: entity_id,
+            session_date: session_action.session_date || new Date().toISOString(),
+            professional_id: session_action.professional_id || staffId,
+            created_by: staffId,
+            updated_by: staffId,
+            status: "activa",
+            summary: "",
+          })
+          .select()
+          .single();
+        if (cErr) throw new Error(`Error creando sesión: ${cErr.message}`);
 
-      const { error: noteErr } = await supabaseAdmin
-        .from("patient_session_notes")
-        .insert(noteInsert);
+        await admin.from("patient_session_entries").insert({
+          session_id: session.id,
+          source: "voice",
+          content: session_action.content,
+          transcription,
+          audio_file_path: audio_file_path || null,
+          created_by: staffId,
+        });
 
-      if (noteErr) {
-        console.error("Session note insert error:", noteErr);
-      } else {
-        results.session_note_created = true;
-
-        try {
-          const { data: existingSynopsis } = await supabaseAdmin
-            .from("patient_synopsis")
-            .select("*")
-            .eq(idCol, entity_id)
-            .maybeSingle();
-
-          const { data: recentNotes } = await supabaseAdmin
-            .from("patient_session_notes")
-            .select("content, created_at")
-            .eq(idCol, entity_id)
-            .order("created_at", { ascending: false })
-            .limit(10);
-
-          const notesContext = (recentNotes || [])
-            .reverse()
-            .map((n: any) => `[${new Date(n.created_at).toLocaleDateString("es-ES")}] ${n.content}`)
-            .join("\n");
-
-          const synResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${lovableKey}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              model: "google/gemini-2.5-flash",
-              messages: [
-                {
-                  role: "system",
-                  content: `Genera una sinopsis breve (5-10 líneas máximo) del estado del paciente. Concisa, útil, en español, sin markdown.`,
-                },
-                {
-                  role: "user",
-                  content: `Sinopsis actual:\n${existingSynopsis?.content || "(ninguna)"}\n\nHistorial reciente:\n${notesContext}\n\nGenera la sinopsis actualizada:`,
-                },
-              ],
-            }),
+        const summary = await regenerateSessionSummary(admin, session.id);
+        await admin.from("patient_sessions").update({ summary, updated_by: staffId }).eq("id", session.id);
+        await regenerateGlobalSynopsis(admin, idCol, entity_id, staffId);
+        results.session_action_result = { type: "created", session_id: session.id, session_number: session.session_number };
+      } else if (session_action.type === "append_to_session" && session_action.session_id) {
+        // Verify session belongs
+        const { data: sExists } = await admin
+          .from("patient_sessions")
+          .select("id, session_number")
+          .eq("id", session_action.session_id)
+          .eq(idCol, entity_id)
+          .maybeSingle();
+        if (!sExists) {
+          results.session_action_result = { type: "error", message: "Sesión no encontrada" };
+        } else {
+          await admin.from("patient_session_entries").insert({
+            session_id: sExists.id,
+            source: "voice",
+            content: session_action.content,
+            transcription,
+            audio_file_path: audio_file_path || null,
+            created_by: staffId,
           });
-
-          if (synResponse.ok) {
-            const synData = await synResponse.json();
-            const newSynopsis = synData.choices?.[0]?.message?.content?.trim();
-            if (newSynopsis) {
-              if (existingSynopsis) {
-                await supabaseAdmin
-                  .from("patient_synopsis")
-                  .update({ content: newSynopsis, updated_by: staffProfile?.id || null })
-                  .eq("id", existingSynopsis.id);
-              } else {
-                await supabaseAdmin.from("patient_synopsis").insert({
-                  content: newSynopsis,
-                  updated_by: staffProfile?.id || null,
-                  [idCol]: entity_id,
-                });
-              }
-              results.synopsis_updated = true;
-            }
+          if (session_action.professional_id) {
+            await admin.from("patient_sessions")
+              .update({ professional_id: session_action.professional_id, updated_by: staffId })
+              .eq("id", sExists.id);
           }
-        } catch (synErr) {
-          console.error("Synopsis update error:", synErr);
+          const summary = await regenerateSessionSummary(admin, sExists.id);
+          await admin.from("patient_sessions").update({ summary, updated_by: staffId }).eq("id", sExists.id);
+          await regenerateGlobalSynopsis(admin, idCol, entity_id, staffId);
+          results.session_action_result = { type: "appended", session_id: sExists.id, session_number: sExists.session_number };
         }
       }
+    }
+
+    // ============= NOTES APPEND =============
+    if (notes_append && !session_action) {
+      const stamp = new Date().toLocaleString("es-ES", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+      const previous = (currentRecord.notes || "").trim();
+      const newNotes = previous ? `${previous}\n\n[${stamp}] ${notes_append.trim()}` : `[${stamp}] ${notes_append.trim()}`;
+      await admin.from(table).update({ notes: newNotes }).eq("id", entity_id);
+      results.notes_appended = true;
     }
 
     return new Response(JSON.stringify({ success: true, ...results }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-
   } catch (e) {
     console.error("process-voice-unified error:", e);
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), {
