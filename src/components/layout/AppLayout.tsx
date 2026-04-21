@@ -1,6 +1,7 @@
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "./AppSidebar";
 import { CenterSelector } from "./CenterSelector";
+import doobotLogo from "@/assets/doobot-logo.png";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -17,6 +18,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <main className="flex-1 p-6 overflow-auto">
             {children}
           </main>
+          <footer className="py-3 flex items-center justify-center gap-2 border-t bg-card/30">
+            <span className="text-[10px] uppercase tracking-widest font-semibold text-muted-foreground">Powered by</span>
+            <img src={doobotLogo} alt="doobot.ai" className="h-7 w-auto object-contain" />
+          </footer>
         </div>
       </div>
     </SidebarProvider>

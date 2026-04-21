@@ -24,6 +24,7 @@ import {
   Eye,
   type LucideIcon,
 } from "lucide-react";
+import nweeLogo from "@/assets/nwee-logo.png";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
@@ -125,22 +126,20 @@ export function AppSidebar() {
   const displayRole = roles.length > 0 ? roles[0].charAt(0).toUpperCase() + roles[0].slice(1) : "Sin rol";
 
   return (
-    <Sidebar collapsible="icon" className="border-r-0">
-      <SidebarHeader className="p-4">
-        <div className="flex items-center gap-2.5">
-          <div className="h-8 w-8 rounded-lg bg-sidebar-primary flex items-center justify-center flex-shrink-0">
-            <Stethoscope className="h-4 w-4 text-sidebar-primary-foreground" />
-          </div>
-          {!collapsed && (
-            <div>
-              <h1 className="text-sm font-bold text-sidebar-accent-foreground font-heading tracking-tight">SaludCRM</h1>
-              <p className="text-[10px] text-sidebar-muted">Gestión sanitaria</p>
+    <Sidebar collapsible="icon" className="border-r border-sidebar-border">
+      <SidebarHeader className="p-4 border-b border-sidebar-border/60">
+        <div className="flex items-center justify-center min-h-[40px]">
+          {collapsed ? (
+            <div className="h-9 w-9 rounded-lg bg-sidebar-primary flex items-center justify-center flex-shrink-0 shadow-sm">
+              <Stethoscope className="h-4.5 w-4.5 text-sidebar-primary-foreground" />
             </div>
+          ) : (
+            <img src={nweeLogo} alt="nwee — Health IA Management" className="h-10 w-auto object-contain" />
           )}
         </div>
       </SidebarHeader>
 
-      <SidebarContent className="px-2">
+      <SidebarContent className="px-2 pt-2">
         <NavGroup label="Principal" items={mainNav} />
         <NavGroup label="Especialidades" items={clinicalNav} />
         <NavGroup label="Gestión" items={managementNav} />

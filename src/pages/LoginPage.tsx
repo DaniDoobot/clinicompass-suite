@@ -3,8 +3,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Stethoscope, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import nweeLogo from "@/assets/nwee-logo.png";
+import doobotLogo from "@/assets/doobot-logo.png";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -30,10 +32,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className="h-14 w-14 rounded-2xl bg-primary flex items-center justify-center mx-auto mb-4">
-            <Stethoscope className="h-7 w-7 text-primary-foreground" />
-          </div>
-          <h1 className="text-2xl font-bold font-heading text-foreground">SaludCRM</h1>
+          <img src={nweeLogo} alt="nwee — Health IA Management" className="h-14 w-auto object-contain mx-auto mb-3" />
           <p className="text-sm text-muted-foreground mt-1">Gestión sanitaria integral</p>
         </div>
 
@@ -76,6 +75,11 @@ export default function LoginPage() {
         <p className="text-[10px] text-muted-foreground text-center mt-4">
           Acceso exclusivo para personal autorizado
         </p>
+
+        <div className="mt-6 flex items-center justify-center gap-2">
+          <span className="text-[10px] uppercase tracking-widest font-semibold text-muted-foreground">Powered by</span>
+          <img src={doobotLogo} alt="doobot.ai" className="h-6 w-auto object-contain" />
+        </div>
       </div>
     </div>
   );
